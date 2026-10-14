@@ -1,0 +1,12 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Local environment variables
+.env
+.env.*
+!.env.example
+
+# Local editor settings
+.vscode/
