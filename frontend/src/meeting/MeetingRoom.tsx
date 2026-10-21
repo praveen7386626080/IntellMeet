@@ -1,7 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
+import type { FormEvent } from 'react'
 import type { Socket } from 'socket.io-client'
 import { createMeetingSocket } from './meetingSocket'
 import './MeetingRoom.css'
+import LiveTranscript from './LiveTranscript'
 
 interface MeetingRoomProps {
   roomId: string
@@ -16,7 +24,10 @@ interface PeerInfo {
 
 interface RemoteParticipant {
   socketId: string
+  displayName: string
   stream: MediaStream
+  audioEnabled: boolean
+  cameraEnabled: boolean
 }
 
 interface RoomJoinedPayload {
@@ -43,6 +54,22 @@ interface IcePayload {
   candidate: RTCIceCandidateInit
 }
 
+interface ChatMessage {
+  id: string
+  senderName: string
+  text: string
+  timestamp: string
+}
+
+interface ChatErrorPayload {
+  message?: string
+}
+
+interface MediaStatePayload {
+  audioEnabled?: boolean
+  cameraEnabled?: boolean
+}
+
 const rtcConfiguration: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -55,45 +82,89 @@ export default function MeetingRoom({
   onLeave,
 }: MeetingRoomProps) {
   const localVideoRef = useRef<HTMLVideoElement>(null)
+  const chatMessagesEndRef = useRef<HTMLDivElement>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
+  const screenStreamRef = useRef<MediaStream | null>(null)
   const socketRef = useRef<Socket | null>(null)
+
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(
     new Map(),
   )
 
+  const screenSharingRef = useRef(false)
+  const mutedRef = useRef(false)
+  const cameraOffRef = useRef(false)
+
   const [participants, setParticipants] = useState<RemoteParticipant[]>([])
   const [muted, setMuted] = useState(false)
   const [cameraOff, setCameraOff] = useState(false)
+  const [screenSharing, setScreenSharing] = useState(false)
   const [connecting, setConnecting] = useState(true)
   const [error, setError] = useState('')
+  const [participantPanelOpen, setParticipantPanelOpen] = useState(true)
+
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatError, setChatError] = useState('')
+
+  const updateParticipantMediaState = useCallback(
+    (audioEnabled: boolean, cameraEnabled: boolean) => {
+      socketRef.current?.emit('participant:media-state', {
+        audioEnabled,
+        cameraEnabled,
+      })
+    },
+    [],
+  )
 
   const removeParticipant = useCallback((socketId: string) => {
     const connection = peerConnectionsRef.current.get(socketId)
 
     if (connection) {
+      connection.ontrack = null
+      connection.onicecandidate = null
+      connection.onconnectionstatechange = null
       connection.close()
       peerConnectionsRef.current.delete(socketId)
     }
 
     setParticipants((current) =>
-      current.filter((participant) => participant.socketId !== socketId),
+      current.filter(
+        (participant) => participant.socketId !== socketId,
+      ),
     )
+  }, [])
+
+  const stopLocalMedia = useCallback(() => {
+    screenSharingRef.current = false
+
+    screenStreamRef.current?.getTracks().forEach((track) => {
+      track.onended = null
+      track.stop()
+    })
+    screenStreamRef.current = null
+
+    localStreamRef.current?.getTracks().forEach((track) => {
+      track.stop()
+    })
+    localStreamRef.current = null
   }, [])
 
   const leaveMeeting = useCallback(() => {
     socketRef.current?.emit('room:leave', { roomId })
 
-    peerConnectionsRef.current.forEach((connection) => connection.close())
+    peerConnectionsRef.current.forEach((connection) => {
+      connection.close()
+    })
     peerConnectionsRef.current.clear()
 
-    localStreamRef.current?.getTracks().forEach((track) => track.stop())
-    localStreamRef.current = null
+    stopLocalMedia()
 
     socketRef.current?.disconnect()
     socketRef.current = null
 
     onLeave()
-  }, [onLeave, roomId])
+  }, [onLeave, roomId, stopLocalMedia])
 
   useEffect(() => {
     let cancelled = false
@@ -136,9 +207,33 @@ export default function MeetingRoom({
           const pc = new RTCPeerConnection(rtcConfiguration)
           connections.set(peerSocketId, pc)
 
-          stream.getTracks().forEach((track) => {
-            pc.addTrack(track, stream)
-          })
+          const currentStream = localStreamRef.current
+
+          if (currentStream) {
+            currentStream.getTracks().forEach((track) => {
+              const sender = pc.addTrack(track, currentStream)
+
+              if (
+                track.kind === 'video' &&
+                screenSharingRef.current &&
+                screenStreamRef.current
+              ) {
+                const screenTrack =
+                  screenStreamRef.current.getVideoTracks()[0]
+
+                if (screenTrack) {
+                  void sender.replaceTrack(screenTrack).catch(
+                    (err: unknown) => {
+                      console.error(
+                        'Could not share screen with new participant:',
+                        err,
+                      )
+                    },
+                  )
+                }
+              }
+            })
+          }
 
           pc.ontrack = (event) => {
             const remoteStream =
@@ -146,7 +241,8 @@ export default function MeetingRoom({
 
             setParticipants((current) => {
               const existingParticipant = current.find(
-                (participant) => participant.socketId === peerSocketId,
+                (participant) =>
+                  participant.socketId === peerSocketId,
               )
 
               if (existingParticipant) {
@@ -163,7 +259,13 @@ export default function MeetingRoom({
 
               return [
                 ...current,
-                { socketId: peerSocketId, stream: remoteStream },
+                {
+                  socketId: peerSocketId,
+                  displayName: `Participant ${peerSocketId.slice(0, 6)}`,
+                  stream: remoteStream,
+                  audioEnabled: true,
+                  cameraEnabled: true,
+                },
               ]
             })
           }
@@ -218,15 +320,35 @@ export default function MeetingRoom({
               try {
                 await makeOffer(peer.socketId)
               } catch {
-                setError('Could not start a connection with a participant.')
+                setError(
+                  'Could not start a connection with a participant.',
+                )
               }
             }
           }
         })
 
-        socket.on('peer:joined', (_payload: PeerJoinedPayload) => {
-          // Existing participants will receive the new participant's
-          // offer when that participant initiates a connection.
+        socket.on('peer:joined', (payload: PeerJoinedPayload) => {
+          setParticipants((current) => {
+            const existing = current.find(
+              (participant) =>
+                participant.socketId === payload.socketId,
+            )
+
+            if (existing) {
+              return current.map((participant) =>
+                participant.socketId === payload.socketId
+                  ? {
+                      ...participant,
+                      displayName:
+                        payload.displayName ?? participant.displayName,
+                    }
+                  : participant,
+              )
+            }
+
+            return current
+          })
         })
 
         socket.on('webrtc:offer', async (payload: OfferPayload) => {
@@ -245,7 +367,9 @@ export default function MeetingRoom({
               answer: pc.localDescription,
             })
           } catch {
-            setError('Could not establish a connection with a participant.')
+            setError(
+              'Could not establish a connection with a participant.',
+            )
           }
         })
 
@@ -273,8 +397,7 @@ export default function MeetingRoom({
               )
             }
           } catch {
-            // An ICE candidate can arrive before remote signaling is ready.
-            // A production implementation should queue early candidates.
+            // ICE candidates may arrive before remote signaling is ready.
           }
         })
 
@@ -282,13 +405,61 @@ export default function MeetingRoom({
           removeParticipant(payload.socketId)
         })
 
+        socket.on(
+          'participant:media-state',
+          (payload: { from: string } & MediaStatePayload) => {
+            setParticipants((current) =>
+              current.map((participant) =>
+                participant.socketId === payload.from
+                  ? {
+                      ...participant,
+                      audioEnabled:
+                        payload.audioEnabled ??
+                        participant.audioEnabled,
+                      cameraEnabled:
+                        payload.cameraEnabled ??
+                        participant.cameraEnabled,
+                    }
+                  : participant,
+              ),
+            )
+          },
+        )
+
+        socket.on('chat:message', (message: ChatMessage) => {
+          if (
+            !message ||
+            typeof message.id !== 'string' ||
+            typeof message.senderName !== 'string' ||
+            typeof message.text !== 'string' ||
+            typeof message.timestamp !== 'string'
+          ) {
+            return
+          }
+
+          setChatMessages((current) =>
+            [...current, message].slice(-200),
+          )
+          setChatError('')
+        })
+
+        socket.on('chat:error', (payload: ChatErrorPayload) => {
+          setChatError(
+            payload.message || 'Could not send the chat message.',
+          )
+        })
+
         socket.on('connect_error', () => {
-          setError('Cannot connect to the meeting server. Check your backend.')
+          setError(
+            'Cannot connect to the meeting server. Check your backend.',
+          )
           setConnecting(false)
         })
 
         socket.on('room:error', (payload: { message?: string }) => {
-          setError(payload.message || 'Unable to join this meeting room.')
+          setError(
+            payload.message || 'Unable to join this meeting room.',
+          )
           setConnecting(false)
         })
 
@@ -297,7 +468,9 @@ export default function MeetingRoom({
         if (cancelled) return
 
         const message =
-          err instanceof Error ? err.message : 'Could not start your camera.'
+          err instanceof Error
+            ? err.message
+            : 'Could not start your camera.'
 
         setError(
           message.includes('Permission denied') ||
@@ -305,6 +478,7 @@ export default function MeetingRoom({
             ? 'Camera or microphone permission was denied. Allow access in your browser and try again.'
             : message,
         )
+
         setConnecting(false)
       }
     }
@@ -317,7 +491,15 @@ export default function MeetingRoom({
       connections.forEach((connection) => connection.close())
       connections.clear()
 
-      localStreamRef.current?.getTracks().forEach((track) => track.stop())
+      screenStreamRef.current?.getTracks().forEach((track) => {
+        track.onended = null
+        track.stop()
+      })
+      screenStreamRef.current = null
+
+      localStreamRef.current?.getTracks().forEach((track) => {
+        track.stop()
+      })
       localStreamRef.current = null
 
       socket?.removeAllListeners()
@@ -329,26 +511,199 @@ export default function MeetingRoom({
     }
   }, [roomId, displayName, removeParticipant])
 
+  useEffect(() => {
+    chatMessagesEndRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'end',
+    })
+  }, [chatMessages])
+
   function toggleMicrophone() {
-    const audioTracks = localStreamRef.current?.getAudioTracks() ?? []
+    const audioTracks =
+      localStreamRef.current?.getAudioTracks() ?? []
     const nextMuted = !muted
 
     audioTracks.forEach((track) => {
       track.enabled = !nextMuted
     })
 
+    mutedRef.current = nextMuted
     setMuted(nextMuted)
+
+    updateParticipantMediaState(
+      !nextMuted,
+      !cameraOffRef.current,
+    )
   }
 
   function toggleCamera() {
-    const videoTracks = localStreamRef.current?.getVideoTracks() ?? []
+    const videoTracks =
+      localStreamRef.current?.getVideoTracks() ?? []
     const nextCameraOff = !cameraOff
 
     videoTracks.forEach((track) => {
       track.enabled = !nextCameraOff
     })
 
+    cameraOffRef.current = nextCameraOff
     setCameraOff(nextCameraOff)
+
+    updateParticipantMediaState(
+      !mutedRef.current,
+      !nextCameraOff,
+    )
+  }
+
+  async function startScreenSharing() {
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setError(
+        'Screen sharing is not available in this browser or context. Use localhost or HTTPS.',
+      )
+      return
+    }
+
+    try {
+      const displayStream =
+        await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false,
+        })
+
+      const screenTrack = displayStream.getVideoTracks()[0]
+      const cameraTrack =
+        localStreamRef.current?.getVideoTracks()[0]
+
+      if (!screenTrack || !cameraTrack) {
+        displayStream.getTracks().forEach((track) => track.stop())
+        setError('The screen or camera video track is unavailable.')
+        return
+      }
+
+      screenStreamRef.current = displayStream
+      screenSharingRef.current = true
+
+      try {
+        const replacements = Array.from(
+          peerConnectionsRef.current.values(),
+        ).map(async (pc) => {
+          const sender = pc.getSenders().find(
+            (item) => item.track?.kind === 'video',
+          )
+
+          if (sender) {
+            await sender.replaceTrack(screenTrack)
+          }
+        })
+
+        await Promise.all(replacements)
+      } catch {
+        screenSharingRef.current = false
+        screenStreamRef.current = null
+
+        displayStream.getTracks().forEach((track) => track.stop())
+
+        setError(
+          'Could not start screen sharing with all participants.',
+        )
+        return
+      }
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = displayStream
+      }
+
+      setScreenSharing(true)
+      setError('')
+
+      screenTrack.onended = () => {
+        void stopScreenSharing()
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : ''
+
+      setError(
+        message.includes('NotAllowedError') ||
+          message.includes('Permission denied')
+          ? 'Screen sharing was cancelled or permission was denied.'
+          : 'Could not start screen sharing. Please try again.',
+      )
+    }
+  }
+
+  async function stopScreenSharing() {
+    const cameraTrack =
+      localStreamRef.current?.getVideoTracks()[0]
+    const screenStream = screenStreamRef.current
+
+    if (!cameraTrack) {
+      setError('Could not restore the camera video track.')
+      return
+    }
+
+    try {
+      const replacements = Array.from(
+        peerConnectionsRef.current.values(),
+      ).map(async (pc) => {
+        const sender = pc.getSenders().find(
+          (item) => item.track?.kind === 'video',
+        )
+
+        if (sender) {
+          await sender.replaceTrack(cameraTrack)
+        }
+      })
+
+      await Promise.all(replacements)
+    } catch {
+      setError(
+        'Screen sharing stopped, but the camera could not be restored for every participant.',
+      )
+    }
+
+    screenSharingRef.current = false
+    screenStreamRef.current = null
+
+    screenStream?.getTracks().forEach((track) => {
+      track.onended = null
+      track.stop()
+    })
+
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current
+    }
+
+    setScreenSharing(false)
+  }
+
+  async function toggleScreenSharing() {
+    if (screenSharingRef.current) {
+      await stopScreenSharing()
+    } else {
+      await startScreenSharing()
+    }
+  }
+
+  function sendChatMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const text = chatInput.trim()
+    const socket = socketRef.current
+
+    if (!text) return
+
+    if (text.length > 1000) {
+      setChatError('Messages must be 1000 characters or fewer.')
+      return
+    }
+
+    if (!socket?.connected) {
+      setChatError('Not connected to the meeting server yet.')
+      return
+    }
+
+    setChatError('')
+    socket.emit('chat:send', { text })
+    setChatInput('')
   }
 
   return (
@@ -359,9 +714,22 @@ export default function MeetingRoom({
           <p>Meeting room: {roomId}</p>
         </div>
 
-        <span className="meeting-status">
-          {connecting ? 'Connecting…' : 'Meeting room'}
-        </span>
+        <div className="meeting-header-actions">
+          <span className="meeting-status">
+            {connecting ? 'Connecting…' : 'Meeting room'}
+          </span>
+
+          <button
+            type="button"
+            className="participant-toggle"
+            onClick={() =>
+              setParticipantPanelOpen((open) => !open)
+            }
+            aria-expanded={participantPanelOpen}
+          >
+            Participants ({participants.length + 1})
+          </button>
+        </div>
       </header>
 
       {error && (
@@ -378,8 +746,11 @@ export default function MeetingRoom({
             muted
             playsInline
           />
+
           <span className="video-label">
-            You ({displayName}){muted ? ' · Muted' : ''}
+            You ({displayName})
+            {muted ? ' · Muted' : ''}
+            {screenSharing ? ' · Sharing screen' : ''}
           </span>
         </article>
 
@@ -399,7 +770,189 @@ export default function MeetingRoom({
         )}
       </section>
 
+      {participantPanelOpen && (
+        <section
+          className="meeting-participants"
+          aria-label="Meeting participants"
+        >
+          <div className="meeting-participants-header">
+            <h2>Participants</h2>
+            <span>{participants.length + 1} in meeting</span>
+          </div>
+
+          <div className="meeting-participant-list">
+            <div className="meeting-participant">
+              <div className="participant-avatar">
+                {displayName.slice(0, 1).toUpperCase()}
+              </div>
+
+              <div className="participant-details">
+                <strong>You ({displayName})</strong>
+                <span>Local participant</span>
+              </div>
+
+              <div className="participant-status">
+                <span title={muted ? 'Microphone muted' : 'Microphone on'}>
+                  {muted ? '🔇' : '🎙️'}
+                </span>
+                <span title={cameraOff ? 'Camera off' : 'Camera on'}>
+                  {cameraOff ? '🚫' : '📹'}
+                </span>
+              </div>
+            </div>
+
+            {participants.map((participant) => (
+              <div
+                className="meeting-participant"
+                key={participant.socketId}
+              >
+                <div className="participant-avatar">
+                  {participant.displayName.slice(0, 1).toUpperCase()}
+                </div>
+
+                <div className="participant-details">
+                  <strong>{participant.displayName}</strong>
+                  <span>Connected</span>
+                </div>
+
+                <div className="participant-status">
+                  <span
+                    title={
+                      participant.audioEnabled
+                        ? 'Microphone on'
+                        : 'Microphone muted'
+                    }
+                  >
+                    {participant.audioEnabled ? '🎙️' : '🔇'}
+                  </span>
+
+                  <span
+                    title={
+                      participant.cameraEnabled
+                        ? 'Camera on'
+                        : 'Camera off'
+                    }
+                  >
+                    {participant.cameraEnabled ? '📹' : '🚫'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="meeting-chat" aria-label="Meeting chat">
+        <div className="meeting-chat-header">
+          <h2>Meeting chat</h2>
+          <span>{chatMessages.length} messages</span>
+        </div>
+
+        <div className="meeting-chat-messages" aria-live="polite">
+          {chatMessages.length === 0 ? (
+            <p className="meeting-chat-empty">
+              No messages yet. Say hello!
+            </p>
+          ) : (
+            chatMessages.map((message) => {
+              const isOwnMessage =
+                message.senderName === displayName
+
+              return (
+                <div
+                  key={message.id}
+                  className={`chat-message ${
+                    isOwnMessage
+                      ? 'chat-message-own'
+                      : 'chat-message-other'
+                  }`}
+                >
+                  <div className="chat-message-meta">
+                    <span className="chat-sender">
+                      {isOwnMessage ? 'You' : message.senderName}
+                    </span>
+
+                    <span className="chat-time">
+                      {new Date(message.timestamp).toLocaleTimeString(
+                        [],
+                        {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        },
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="chat-message-bubble">
+                    {message.text}
+                  </div>
+                </div>
+              )
+            })
+          )}
+
+          <div ref={chatMessagesEndRef} />
+        </div>
+
+        {chatError && (
+          <p className="meeting-chat-error" role="alert">
+            {chatError}
+          </p>
+        )}
+
+        <form
+          className="meeting-chat-form"
+          onSubmit={sendChatMessage}
+        >
+          <input
+            type="text"
+            value={chatInput}
+            onChange={(event) => setChatInput(event.target.value)}
+            placeholder="Write a message..."
+            aria-label="Chat message"
+            maxLength={1000}
+            autoComplete="off"
+            disabled={connecting}
+          />
+
+          <button
+            type="submit"
+            disabled={!chatInput.trim() || connecting}
+          >
+            Send
+          </button>
+        </form>
+      </section>
+
+      <section className="meeting-transcript-section">
+        <LiveTranscript meetingId={roomId} />
+      </section>
+
       <footer className="meeting-controls">
+        <button
+          type="button"
+          onClick={() => void toggleScreenSharing()}
+          className={
+            screenSharing
+              ? 'meeting-control screen-share-control active'
+              : 'meeting-control screen-share-control'
+          }
+          aria-label={
+            screenSharing ? 'Stop screen sharing' : 'Share screen'
+          }
+          title={
+            screenSharing ? 'Stop screen sharing' : 'Share screen'
+          }
+          disabled={connecting}
+        >
+          <span aria-hidden="true">
+            {screenSharing ? '🛑' : '🖥️'}
+          </span>
+          <span className="control-label">
+            {screenSharing ? 'Stop sharing' : 'Share screen'}
+          </span>
+        </button>
+
         <button
           type="button"
           onClick={toggleMicrophone}
@@ -408,16 +961,26 @@ export default function MeetingRoom({
           title={muted ? 'Unmute microphone' : 'Mute microphone'}
         >
           <span aria-hidden="true">{muted ? '🔇' : '🎙️'}</span>
+          <span className="control-label">
+            {muted ? 'Unmute' : 'Mute'}
+          </span>
         </button>
 
         <button
           type="button"
           onClick={toggleCamera}
-          className={cameraOff ? 'meeting-control active' : 'meeting-control'}
+          className={
+            cameraOff ? 'meeting-control active' : 'meeting-control'
+          }
           aria-label={cameraOff ? 'Turn camera on' : 'Turn camera off'}
           title={cameraOff ? 'Turn camera on' : 'Turn camera off'}
         >
-          <span aria-hidden="true">{cameraOff ? '🚫' : '📹'}</span>
+          <span aria-hidden="true">
+            {cameraOff ? '🚫' : '📹'}
+          </span>
+          <span className="control-label">
+            {cameraOff ? 'Camera on' : 'Camera off'}
+          </span>
         </button>
 
         <button
@@ -428,6 +991,7 @@ export default function MeetingRoom({
           title="Leave meeting"
         >
           <span aria-hidden="true">📞</span>
+          <span className="control-label">Leave</span>
         </button>
       </footer>
     </main>
@@ -442,8 +1006,13 @@ function RemoteVideoTile({
   const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = participant.stream
+    const video = videoRef.current
+    if (!video) return
+
+    video.srcObject = participant.stream
+
+    return () => {
+      video.srcObject = null
     }
   }, [participant.stream])
 
@@ -454,8 +1023,11 @@ function RemoteVideoTile({
         autoPlay
         playsInline
       />
+
       <span className="video-label">
-        Participant {participant.socketId.slice(0, 6)}
+        {participant.displayName}
+        {!participant.audioEnabled ? ' · Muted' : ''}
+        {!participant.cameraEnabled ? ' · Camera off' : ''}
       </span>
     </article>
   )

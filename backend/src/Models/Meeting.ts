@@ -17,6 +17,16 @@ const meetingSchema = new Schema(
       type: String,
       required: true,
     },
+    transcript: {
+      type: String,
+      default: '',
+    },
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: false,
+      index: true,
+    },
   },
   {
     timestamps: true,

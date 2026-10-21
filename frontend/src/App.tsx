@@ -1,7 +1,8 @@
-
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import './App.css'
 import MeetingRoom from './meeting/MeetingRoom'
+import LiveTranscript from './meeting/LiveTranscript'
+import { useAuth } from './auth/AuthContext'
 
 type Meeting = {
   id: string
@@ -17,9 +18,7 @@ type ApiMeeting = {
   time: string
 }
 
-
 const API_URL = 'http://localhost:5000/api/meetings'
-
 
 const menuItems = [
   'Dashboard',
@@ -72,6 +71,7 @@ function getMeetingIdFromInput(input: string): string | null {
 }
 
 function App() {
+  const { token, user } = useAuth()
   const [activePage, setActivePage] = useState('Dashboard')
   const [showMeetingForm, setShowMeetingForm] = useState(false)
   const [showJoinForm, setShowJoinForm] = useState(false)
@@ -87,8 +87,20 @@ function App() {
   const [deletingMeetingId, setDeletingMeetingId] =
     useState<string | null>(null)
 
+  // Read the meeting room from the URL during initial state setup.
+  // This avoids calling setState synchronously inside an effect.
   const [activeMeetingRoom, setActiveMeetingRoom] =
-    useState<string | null>(null)
+    useState<string | null>(() => {
+      const params = new URLSearchParams(window.location.search)
+      const roomId = params.get('meeting')
+
+      return roomId && getMeetingIdFromInput(roomId)
+        ? roomId
+        : null
+    })
+
+  // Store the current time in state so render calculations stay pure.
+  const [currentTime, setCurrentTime] = useState(0)
 
   const nextNoticeId = useRef(0)
 
@@ -99,13 +111,19 @@ function App() {
 
   const [errorMessage, setErrorMessage] = useState('')
 
-  // Automatically join when a meeting link contains ?meeting=ROOM_ID.
+  // Update the current time outside the render calculation.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const roomId = params.get('meeting')
+    const initialTimer = window.setTimeout(() => {
+      setCurrentTime(Date.now())
+    }, 0)
 
-    if (roomId && getMeetingIdFromInput(roomId)) {
-      setActiveMeetingRoom(roomId)
+    const interval = window.setInterval(() => {
+      setCurrentTime(Date.now())
+    }, 60_000)
+
+    return () => {
+      window.clearTimeout(initialTimer)
+      window.clearInterval(interval)
     }
   }, [])
 
@@ -132,14 +150,25 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [errorMessage])
 
-  // Load meetings saved in MongoDB.
+  // Load the signed-in user's meetings saved in MongoDB.
   useEffect(() => {
     const controller = new AbortController()
 
     async function loadMeetings() {
+      if (!token) {
+        setMeetings([])
+        setLoadingMeetings(false)
+        return
+      }
+
+      setLoadingMeetings(true)
+
       try {
         const response = await fetch(API_URL, {
           signal: controller.signal,
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         })
 
         if (!response.ok) {
@@ -174,13 +203,14 @@ function App() {
     void loadMeetings()
 
     return () => controller.abort()
-  }, [])
+  }, [token])
 
+  // Filter and sort upcoming meetings using state instead of Date.now().
   const upcomingMeetings = meetings
     .filter(
       (meeting) =>
         new Date(`${meeting.date}T${meeting.time}`).getTime() >=
-        Date.now(),
+        currentTime,
     )
     .sort(
       (a, b) =>
@@ -244,10 +274,15 @@ function App() {
     setSavingMeeting(true)
 
     try {
+      if (!token) {
+        throw new Error('Please log in before creating a meeting.')
+      }
+
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           title: meetingTitle.trim(),
@@ -314,8 +349,15 @@ function App() {
     setDeletingMeetingId(meeting.id)
 
     try {
+      if (!token) {
+        throw new Error('Please log in before deleting a meeting.')
+      }
+
       const response = await fetch(`${API_URL}/${meeting.id}`, {
         method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       })
 
       const result: { message?: string } =
@@ -397,13 +439,18 @@ function App() {
     )
   }
 
-  // Display the full video meeting instead of the dashboard.
+  // Display the actual video meeting room instead of the dashboard.
   if (activeMeetingRoom) {
     return (
       <MeetingRoom
         roomId={activeMeetingRoom}
-        displayName="Workspace member"
-        onLeave={() => setActiveMeetingRoom(null)}
+        displayName={user?.name || 'IntellMeet User'}
+        onLeave={() => {
+          setActiveMeetingRoom(null)
+          const url = new URL(window.location.href)
+          url.searchParams.delete('meeting')
+          window.history.replaceState({}, '', url)
+        }}
       />
     )
   }
@@ -549,6 +596,8 @@ function App() {
                 <p>Meeting insights in one place</p>
               </article>
             </section>
+
+            <LiveTranscript />
 
             <section className="content-grid">
               <article className="panel">

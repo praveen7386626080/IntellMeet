@@ -55,6 +55,10 @@ interface RelayPayload {
   candidate?: RTCIceCandidateInit
 }
 
+interface ChatSendPayload {
+  text: string
+}
+
 function isValidRoomId(roomId: unknown): roomId is string {
   return (
     typeof roomId === 'string' &&
@@ -84,6 +88,16 @@ function isValidRelayPayload(payload: unknown): payload is RelayPayload {
     data.to.length > 0 &&
     data.to.length <= 100
   )
+}
+
+function isValidChatPayload(payload: unknown): payload is ChatSendPayload {
+  if (typeof payload !== 'object' || payload === null) {
+    return false
+  }
+
+  const data = payload as Record<string, unknown>
+
+  return typeof data.text === 'string'
 }
 
 io.on('connection', (socket) => {
@@ -131,7 +145,8 @@ io.on('connection', (socket) => {
         return {
           socketId,
           displayName:
-            (peerSocket?.data.displayName as string | undefined) ?? 'Participant',
+            (peerSocket?.data.displayName as string | undefined) ??
+            'Participant',
         }
       })
 
@@ -182,26 +197,9 @@ io.on('connection', (socket) => {
 
     const data = payload as RelayPayload
 
-    if (
-      event === 'webrtc:offer' &&
-      !data.offer
-    ) {
-      return
-    }
-
-    if (
-      event === 'webrtc:answer' &&
-      !data.answer
-    ) {
-      return
-    }
-
-    if (
-      event === 'webrtc:ice' &&
-      !data.candidate
-    ) {
-      return
-    }
+    if (event === 'webrtc:offer' && !data.offer) return
+    if (event === 'webrtc:answer' && !data.answer) return
+    if (event === 'webrtc:ice' && !data.candidate) return
 
     io.to(target.id).emit(event, {
       from: socket.id,
@@ -223,12 +221,74 @@ io.on('connection', (socket) => {
     relayToPeer('webrtc:ice', payload)
   })
 
+  // Real-time meeting chat.
+  socket.on('chat:send', (payload: unknown) => {
+    const roomId = socket.data.roomId as string | undefined
+    const senderName = socket.data.displayName as string | undefined
+
+    if (!roomId || !senderName) {
+      socket.emit('chat:error', {
+        message: 'Join a meeting before sending chat messages.',
+      })
+      return
+    }
+
+    if (!isValidChatPayload(payload)) {
+      socket.emit('chat:error', {
+        message: 'Invalid chat message.',
+      })
+      return
+    }
+
+    const text = payload.text.trim()
+
+    if (text.length === 0 || text.length > 1000) {
+      socket.emit('chat:error', {
+        message: 'Messages must contain between 1 and 1000 characters.',
+      })
+      return
+    }
+
+    // The sender name comes from room:join, not from the client message.
+    io.to(roomId).emit('chat:message', {
+      id: `${socket.id}-${Date.now()}`,
+      senderName,
+      text,
+      timestamp: new Date().toISOString(),
+    })
+  })
+
+  socket.on('participant:media-state', (payload: unknown) => {
+    const roomId = socket.data.roomId as string | undefined
+
+    if (!roomId) {
+      return
+    }
+
+    if (typeof payload !== 'object' || payload === null) {
+      return
+    }
+
+    const data = payload as Record<string, unknown>
+
+    if (
+      typeof data.audioEnabled !== 'boolean' &&
+      typeof data.cameraEnabled !== 'boolean'
+    ) {
+      return
+    }
+
+    socket.to(roomId).emit('participant:media-state', {
+      from: socket.id,
+      audioEnabled: Boolean(data.audioEnabled),
+      cameraEnabled: Boolean(data.cameraEnabled),
+    })
+  })
+
   socket.on('room:leave', async (payload?: { roomId?: string }) => {
     const currentRoomId = socket.data.roomId as string | undefined
 
-    if (!currentRoomId) {
-      return
-    }
+    if (!currentRoomId) return
 
     // A client cannot make this socket leave an unrelated room.
     if (payload?.roomId && payload.roomId !== currentRoomId) {
@@ -240,6 +300,7 @@ io.on('connection', (socket) => {
     })
 
     await socket.leave(currentRoomId)
+
     delete socket.data.roomId
     delete socket.data.displayName
 
@@ -281,6 +342,7 @@ async function startServer() {
     httpServer.listen(PORT, () => {
       console.log(`IntellMeet API running at http://localhost:${PORT}`)
       console.log('Socket.IO meeting signaling server is ready.')
+      console.log('Real-time meeting chat is ready.')
     })
   } catch (error) {
     console.error('Could not connect to MongoDB:', error)
