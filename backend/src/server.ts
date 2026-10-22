@@ -8,6 +8,8 @@ import { Server } from 'socket.io'
 
 import meetingsRouter from './routes/meetings'
 import authRouter from './routes/auth'
+import transcriptionRouter from './routes/transcription'
+import transcriptsRouter from './routes/transcripts'
 
 dotenv.config()
 
@@ -32,6 +34,8 @@ app.get('/api/health', (_req, res) => {
 })
 
 app.use('/api/meetings', meetingsRouter)
+app.use('/api/transcription', transcriptionRouter)
+app.use('/api/transcripts', transcriptsRouter)
 
 // Express and Socket.IO share the same HTTP server.
 const httpServer = createServer(app)
