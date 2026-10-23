@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import './LiveTranscript.css'
+import MeetingSummary from './MeetingSummary'
 
 interface LiveTranscriptProps {
   meetingId?: string
@@ -97,6 +98,8 @@ export default function LiveTranscript({
         return
       }
 
+      setLoadingTranscript(true)
+
       try {
         const response = await fetch(
           `${API_URL}/${encodeURIComponent(meetingId)}/transcript`,
@@ -120,15 +123,13 @@ export default function LiveTranscript({
         }
 
         if (typeof data.transcript !== 'string') {
-          throw new Error(
-            'The server returned an invalid transcript.',
-          )
+          throw new Error('The server returned an invalid transcript.')
         }
 
         if (controller.signal.aborted) return
 
         // Mark the meeting as loaded before updating transcript state.
-        // This prevents the autosave effect from saving stale content.
+        // This prevents autosave from saving stale content.
         loadedMeetingIdRef.current = meetingId
 
         setTranscript(data.transcript)
@@ -157,7 +158,7 @@ export default function LiveTranscript({
     }
   }, [meetingId, token])
 
-  // Automatically save changes after the user pauses.
+  // Automatically save transcript changes after the user pauses.
   useEffect(() => {
     if (
       !meetingId ||
@@ -219,6 +220,7 @@ export default function LiveTranscript({
     }
   }, [transcript, meetingId, token])
 
+  // Start browser-based speech recognition.
   function startTranscription() {
     setError('')
 
@@ -228,6 +230,7 @@ export default function LiveTranscript({
     }
 
     const speechWindow = window as SpeechWindow
+
     const SpeechRecognition =
       speechWindow.SpeechRecognition ??
       speechWindow.webkitSpeechRecognition
@@ -314,6 +317,7 @@ export default function LiveTranscript({
     }
   }
 
+  // Stop speech recognition.
   function stopTranscription() {
     shouldListenRef.current = false
     recognitionRef.current?.stop()
@@ -321,13 +325,21 @@ export default function LiveTranscript({
     setInterimText('')
   }
 
+  // Clear the current transcript.
   function clearTranscript() {
+    const confirmed = window.confirm(
+      'Are you sure you want to clear the transcript? The empty transcript will be saved to this meeting.',
+    )
+
+    if (!confirmed) return
+
     setTranscript('')
     setInterimText('')
     setError('')
     setSaveStatus('')
   }
 
+  // Download the transcript as a text file.
   function downloadTranscript() {
     const text = transcript.trim()
 
@@ -430,6 +442,7 @@ export default function LiveTranscript({
         {transcript || interimText ? (
           <>
             {transcript && <p>{transcript}</p>}
+
             {interimText && (
               <p className="transcript-interim">{interimText}</p>
             )}
@@ -447,6 +460,14 @@ export default function LiveTranscript({
           ? 'Your transcript is automatically saved to this meeting.'
           : 'Open a meeting room to enable transcript saving.'}
       </p>
+
+      {/* AI summary is available for meetings with a saved meeting ID. */}
+      {meetingId && (
+        <MeetingSummary
+          meetingId={meetingId}
+          transcript={transcript}
+        />
+      )}
     </section>
   )
 }

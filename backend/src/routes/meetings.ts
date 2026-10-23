@@ -8,6 +8,47 @@ import {
 
 const router = Router()
 
+interface MeetingSummary {
+  summary: string
+  keyDecisions: string[]
+  actionItems: string[]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function parseGeneratedSummary(value: unknown): MeetingSummary | null {
+  if (!isRecord(value) || typeof value.response !== 'string') {
+    return null
+  }
+
+  let parsed: unknown
+
+  try {
+    parsed = JSON.parse(value.response)
+  } catch {
+    return null
+  }
+
+  if (
+    !isRecord(parsed) ||
+    typeof parsed.summary !== 'string' ||
+    !Array.isArray(parsed.keyDecisions) ||
+    !parsed.keyDecisions.every((item) => typeof item === 'string') ||
+    !Array.isArray(parsed.actionItems) ||
+    !parsed.actionItems.every((item) => typeof item === 'string')
+  ) {
+    return null
+  }
+
+  return {
+    summary: parsed.summary,
+    keyDecisions: parsed.keyDecisions,
+    actionItems: parsed.actionItems,
+  }
+}
+
 // GET /api/meetings — get meetings belonging to the logged-in user
 router.get(
   '/',
@@ -211,6 +252,174 @@ router.put(
 
       res.status(500).json({
         message: 'Could not save transcript.',
+      })
+    }
+  },
+)
+
+// POST /api/meetings/:id/summary — generate and save an AI meeting summary
+router.post(
+  '/:id/summary',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const rawId = req.params.id
+      const id = Array.isArray(rawId) ? rawId[0] : rawId
+
+      if (typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id)) {
+        res.status(400).json({
+          message: 'Invalid meeting ID.',
+        })
+        return
+      }
+
+      const meeting = await Meeting.findOne({
+        _id: id,
+        createdBy: req.userId,
+      }).select('title transcript')
+
+      if (!meeting) {
+        res.status(404).json({
+          message: 'Meeting not found.',
+        })
+        return
+      }
+
+      const transcript = meeting.transcript?.trim()
+
+      if (!transcript) {
+        res.status(400).json({
+          message: 'Add a transcript before generating a meeting summary.',
+        })
+        return
+      }
+
+      const ollamaUrl = (
+        process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
+      ).replace(/\/+$/, '')
+      const model = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
+      let ollamaResponse: globalThis.Response
+
+      try {
+        ollamaResponse = await fetch(`${ollamaUrl}/api/generate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            stream: false,
+            format: {
+              type: 'object',
+              properties: {
+                summary: { type: 'string' },
+                keyDecisions: {
+                  type: 'array',
+                  items: { type: 'string' },
+                },
+                actionItems: {
+                  type: 'array',
+                  items: { type: 'string' },
+                },
+              },
+              required: ['summary', 'keyDecisions', 'actionItems'],
+              additionalProperties: false,
+            },
+            options: {
+              temperature: 0.2,
+            },
+            prompt: `Summarize the following meeting transcript. Follow the required JSON schema exactly. Do not invent details; use empty arrays when none are stated.
+
+Meeting title: ${meeting.title}
+
+Transcript:
+${transcript}`,
+          }),
+          signal: AbortSignal.timeout(120_000),
+        })
+      } catch (error) {
+        console.error('Could not reach Ollama:', error)
+
+        res.status(503).json({
+          message:
+            'Could not reach Ollama. Start Ollama and make sure the configured model is available.',
+        })
+        return
+      }
+
+      if (!ollamaResponse.ok) {
+        const detail = await ollamaResponse.text()
+        console.error(
+          `Ollama returned ${ollamaResponse.status}:`,
+          detail,
+        )
+
+        res.status(502).json({
+          message: `Ollama could not generate the summary. Check that the model "${model}" is installed and running.`,
+        })
+        return
+      }
+
+      let generatedData: unknown
+
+      try {
+        generatedData = await ollamaResponse.json()
+      } catch (error) {
+        console.error('Ollama returned invalid JSON:', error)
+
+        res.status(502).json({
+          message: 'Ollama returned an invalid response.',
+        })
+        return
+      }
+
+      const generatedSummary = parseGeneratedSummary(generatedData)
+
+      if (!generatedSummary || !generatedSummary.summary.trim()) {
+        console.error('Ollama returned an invalid meeting summary.')
+
+        res.status(502).json({
+          message:
+            'Ollama returned an invalid summary. Try generating it again.',
+        })
+        return
+      }
+
+      const savedMeeting = await Meeting.findOneAndUpdate(
+        {
+          _id: id,
+          createdBy: req.userId,
+        },
+        {
+          $set: {
+            ...generatedSummary,
+            summaryGeneratedAt: new Date(),
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      ).select('summary keyDecisions actionItems summaryGeneratedAt')
+
+      if (!savedMeeting) {
+        res.status(404).json({
+          message: 'Meeting not found.',
+        })
+        return
+      }
+
+      res.status(200).json({
+        summary: savedMeeting.summary,
+        keyDecisions: savedMeeting.keyDecisions,
+        actionItems: savedMeeting.actionItems,
+        summaryGeneratedAt: savedMeeting.summaryGeneratedAt,
+      })
+    } catch (error) {
+      console.error('Could not generate meeting summary:', error)
+
+      res.status(500).json({
+        message: 'Could not generate the AI meeting summary.',
       })
     }
   },

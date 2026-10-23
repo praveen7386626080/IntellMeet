@@ -18,9 +18,8 @@ const MONGODB_URI = process.env.MONGODB_URI
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173'
 
 app.use(cors({ origin: CLIENT_URL }))
-app.use(express.json({ limit: '10kb' }))
 
-app.use('/api/auth', authRouter)
+app.use('/api/auth', express.json({ limit: '10kb' }), authRouter)
 
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -31,7 +30,7 @@ app.get('/api/health', (_req, res) => {
   })
 })
 
-app.use('/api/meetings', meetingsRouter)
+app.use('/api/meetings', express.json({ limit: '4mb' }), meetingsRouter)
 
 // Express and Socket.IO share the same HTTP server.
 const httpServer = createServer(app)
