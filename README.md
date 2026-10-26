@@ -9,6 +9,10 @@ transcription, saved transcripts, and AI-generated meeting summaries.
 - Register and log in with a user account.
 - Schedule and manage meetings.
 - Join live meeting rooms with real-time participant and chat updates.
+- Create projects and tasks, assign tasks to projects, and track their status.
+- Invite existing IntellMeet accounts to a workspace and share saved messages.
+- View workspace analytics for meetings, projects, tasks, team members, and AI
+  meeting notes.
 - Transcribe speech in supported browsers and save transcripts.
 - Generate meeting summaries, key decisions, and action items using a local
   Ollama model.
@@ -123,6 +127,11 @@ npm run lint
 
 ## Notes
 
+- Tasks, projects, workspace membership, and workspace messages are saved in
+  MongoDB and are available after signing in again.
+- Invite teammates by the email address on their existing IntellMeet account.
+- Workspace messages are shared with workspace members; meeting-room chat
+  remains specific to its live meeting room.
 - Microphone permission is required for speech transcription.
 - Speech recognition depends on browser support; Chrome and Edge provide the
   browser Speech Recognition API used by the app.

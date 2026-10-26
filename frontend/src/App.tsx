@@ -3,6 +3,9 @@ import './App.css'
 import MeetingRoom from './meeting/MeetingRoom'
 import LiveTranscript from './meeting/LiveTranscript'
 import { useAuth } from './auth/AuthContext'
+import WorkspacePage, {
+  type WorkspaceSection,
+} from './workspace/WorkspacePage'
 
 type Meeting = {
   id: string
@@ -18,9 +21,19 @@ type ApiMeeting = {
   time: string
 }
 
+type DashboardAnalytics = {
+  todoTaskCount: number
+  inProgressTaskCount: number
+  activeProjectCount: number
+  summaryCount: number
+}
+
 const API_URL = `${
   import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 }/meetings`
+const WORKSPACE_API_URL = `${
+  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+}/workspace`
 
 const menuItems = [
   'Dashboard',
@@ -85,6 +98,8 @@ function App() {
 
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [loadingMeetings, setLoadingMeetings] = useState(true)
+  const [dashboardAnalytics, setDashboardAnalytics] =
+    useState<DashboardAnalytics | null>(null)
   const [savingMeeting, setSavingMeeting] = useState(false)
   const [deletingMeetingId, setDeletingMeetingId] =
     useState<string | null>(null)
@@ -206,6 +221,40 @@ function App() {
 
     return () => controller.abort()
   }, [token])
+
+  useEffect(() => {
+    if (!token || activePage !== 'Dashboard') return
+
+    const controller = new AbortController()
+
+    async function loadDashboardAnalytics() {
+      try {
+        const response = await fetch(`${WORKSPACE_API_URL}/analytics`, {
+          signal: controller.signal,
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (!response.ok) {
+          throw new Error('Could not load workspace analytics.')
+        }
+
+        const data: DashboardAnalytics = await response.json()
+        setDashboardAnalytics(data)
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return
+
+        setErrorMessage(
+          'Unable to load workspace analytics. Please check the backend connection.',
+        )
+      }
+    }
+
+    void loadDashboardAnalytics()
+
+    return () => controller.abort()
+  }, [activePage, token])
 
   // Filter and sort upcoming meetings using state instead of Date.now().
   const upcomingMeetings = meetings
@@ -495,10 +544,12 @@ function App() {
         </nav>
 
         <div className="profile">
-          <div className="avatar">U</div>
+          <div className="avatar">
+            {(user?.name || 'U').slice(0, 1).toUpperCase()}
+          </div>
           <div>
-            <strong>Your Account</strong>
-            <p>Workspace member</p>
+            <strong>{user?.name || 'Your Account'}</strong>
+            <p>{user?.email || 'Workspace member'}</p>
           </div>
         </div>
       </aside>
@@ -582,19 +633,24 @@ function App() {
 
               <article className="stat-card">
                 <span>Pending Tasks</span>
-                <h2>0</h2>
+                <h2>
+                  {dashboardAnalytics
+                    ? dashboardAnalytics.todoTaskCount +
+                      dashboardAnalytics.inProgressTaskCount
+                    : '—'}
+                </h2>
                 <p>Stay on top of your work</p>
               </article>
 
               <article className="stat-card">
                 <span>Active Projects</span>
-                <h2>0</h2>
+                <h2>{dashboardAnalytics?.activeProjectCount ?? '—'}</h2>
                 <p>Your team's projects</p>
               </article>
 
               <article className="stat-card">
                 <span>AI Meeting Notes</span>
-                <h2>0</h2>
+                <h2>{dashboardAnalytics?.summaryCount ?? '—'}</h2>
                 <p>Meeting insights in one place</p>
               </article>
             </section>
@@ -753,25 +809,20 @@ function App() {
           </section>
         )}
 
-        {activePage !== 'Dashboard' && activePage !== 'Meetings' && (
-          <section className="panel placeholder-panel">
-            <div className="empty-icon">✦</div>
-            <h2>{activePage}</h2>
-            <p>
-              The {activePage.toLowerCase()} section is coming next. Your
-              IntellMeet workspace is being built step by step.
-            </p>
-
-            {activePage === 'Messages' && (
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => setActivePage('Meetings')}
-              >
-                Explore Meetings
-              </button>
-            )}
-          </section>
+        {(
+          [
+            'Messages',
+            'My Tasks',
+            'Projects',
+            'Team',
+            'Analytics',
+          ] as WorkspaceSection[]
+        ).includes(activePage as WorkspaceSection) &&
+          token && (
+            <WorkspacePage
+              page={activePage as WorkspaceSection}
+              token={token}
+            />
         )}
       </main>
 
