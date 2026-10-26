@@ -1,4 +1,5 @@
-import { useState } from 'react'
+
+import { useState, useEffect } from 'react'
 import './MeetingSummary.css'
 
 interface MeetingSummaryProps {
@@ -10,11 +11,10 @@ interface SummaryResult {
   summary: string
   keyDecisions: string[]
   actionItems: string[]
-  message?: string
+  summaryGeneratedAt?: string | null
 }
 
 const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/meetings`
-
 const TOKEN_KEY = 'intellmeet-access-token'
 
 export default function MeetingSummary({
@@ -23,13 +23,95 @@ export default function MeetingSummary({
 }: MeetingSummaryProps) {
   const [result, setResult] = useState<SummaryResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [fetching, setFetching] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+
+  // Load previously saved summary whenever the meeting opens.
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadSavedSummary() {
+      setResult(null)
+      setError('')
+      setNotice('')
+
+      if (!meetingId || !/^[a-f\d]{24}$/i.test(meetingId)) {
+        return
+      }
+
+      const token = localStorage.getItem(TOKEN_KEY)
+
+      if (!token) {
+        setError('Please log in again to view your saved summary.')
+        return
+      }
+
+      setFetching(true)
+
+      try {
+        const response = await fetch(
+          `${API_URL}/${encodeURIComponent(meetingId)}/summary`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        )
+
+        const data = await response.json().catch(() => ({}))
+
+        if (!response.ok) {
+          throw new Error(
+            data.message || 'Could not load the saved meeting summary.',
+          )
+        }
+
+        if (
+          typeof data.summary !== 'string' ||
+          !Array.isArray(data.keyDecisions) ||
+          !Array.isArray(data.actionItems)
+        ) {
+          throw new Error('The server returned an invalid saved summary.')
+        }
+
+        if (cancelled) return
+
+        if (data.summary.trim()) {
+          setResult({
+            summary: data.summary,
+            keyDecisions: data.keyDecisions,
+            actionItems: data.actionItems,
+            summaryGeneratedAt: data.summaryGeneratedAt ?? null,
+          })
+          setNotice('Previously saved AI summary loaded successfully.')
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : 'Could not load the saved meeting summary.',
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setFetching(false)
+        }
+      }
+    }
+
+    loadSavedSummary()
+
+    return () => {
+      cancelled = true
+    }
+  }, [meetingId])
 
   async function generateSummary() {
     setError('')
     setNotice('')
-    setResult(null)
 
     const token = localStorage.getItem(TOKEN_KEY)
 
@@ -105,6 +187,7 @@ export default function MeetingSummary({
         summary: data.summary,
         keyDecisions: data.keyDecisions,
         actionItems: data.actionItems,
+        summaryGeneratedAt: data.summaryGeneratedAt ?? null,
       })
 
       setNotice('AI summary generated and saved successfully.')
@@ -134,10 +217,20 @@ export default function MeetingSummary({
         type="button"
         className="ai-summary-button"
         onClick={generateSummary}
-        disabled={loading}
+        disabled={loading || fetching}
       >
-        {loading ? 'Generating summary…' : '✨ Generate AI Summary'}
+        {loading
+          ? 'Generating summary…'
+          : fetching
+            ? 'Loading saved summary…'
+            : '✨ Generate AI Summary'}
       </button>
+
+      {fetching && (
+        <p className="ai-summary-status" role="status">
+          Checking for a previously saved meeting summary…
+        </p>
+      )}
 
       {loading && (
         <p className="ai-summary-status" role="status">

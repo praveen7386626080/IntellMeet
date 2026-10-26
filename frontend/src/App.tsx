@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import './App.css'
 import MeetingRoom from './meeting/MeetingRoom'
@@ -87,6 +88,18 @@ function getMeetingIdFromInput(input: string): string | null {
 
 function App() {
   const { token, user } = useAuth()
+
+  // Theme preference: saved in localStorage.
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const savedTheme = localStorage.getItem('intellmeet-theme')
+    return savedTheme === 'dark' ? 'dark' : 'light'
+  })
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('intellmeet-theme', theme)
+  }, [theme])
+
   const [activePage, setActivePage] = useState('Dashboard')
   const [showMeetingForm, setShowMeetingForm] = useState(false)
   const [showJoinForm, setShowJoinForm] = useState(false)
@@ -562,6 +575,25 @@ function App() {
           </div>
 
           <div className="topbar-actions">
+            <button
+              type="button"
+              className="theme-toggle"
+              onClick={() =>
+                setTheme((current) =>
+                  current === 'light' ? 'dark' : 'light',
+                )
+              }
+              aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+              title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+            >
+              <span aria-hidden="true">
+                {theme === 'light' ? '☾' : '☀'}
+              </span>
+              <span>
+                {theme === 'light' ? 'Dark' : 'Light'} Mode
+              </span>
+            </button>
+
             <button
               type="button"
               className="secondary-button"

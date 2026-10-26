@@ -1,4 +1,3 @@
-
 import { useState, type FormEvent } from 'react'
 import { useAuth } from './AuthContext'
 import './Auth.css'
@@ -9,8 +8,21 @@ export default function AuthPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return document.documentElement.getAttribute('data-theme') === 'dark'
+      ? 'dark'
+      : 'light'
+  })
 
   const { signIn, signUp, error, clearError } = useAuth()
+
+  function toggleTheme() {
+    const nextTheme = theme === 'light' ? 'dark' : 'light'
+
+    setTheme(nextTheme)
+    document.documentElement.setAttribute('data-theme', nextTheme)
+    localStorage.setItem('intellmeet-theme', nextTheme)
+  }
 
   function switchMode(nextMode: 'login' | 'register') {
     setMode(nextMode)
@@ -41,6 +53,22 @@ export default function AuthPage() {
   return (
     <main className="auth-page">
       <section className="auth-card">
+
+        <div className="auth-top-actions">
+          <button
+            type="button"
+            className="auth-theme-toggle"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          >
+            <span aria-hidden="true">
+              {theme === 'light' ? '☾' : '☀'}
+            </span>
+            {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
+          </button>
+        </div>
+
         <div className="auth-brand">
           <div className="auth-logo">IM</div>
           <div>
@@ -52,6 +80,7 @@ export default function AuthPage() {
         <h2>
           {mode === 'login' ? 'Welcome back' : 'Create your account'}
         </h2>
+
         <p className="auth-subtitle">
           {mode === 'login'
             ? 'Sign in to continue to your workspace.'
@@ -66,6 +95,7 @@ export default function AuthPage() {
           >
             Sign in
           </button>
+
           <button
             type="button"
             className={mode === 'register' ? 'active' : ''}
@@ -143,6 +173,7 @@ export default function AuthPage() {
           {mode === 'login'
             ? "Don't have an account?"
             : 'Already have an account?'}{' '}
+
           <button
             type="button"
             onClick={() =>
@@ -152,6 +183,7 @@ export default function AuthPage() {
             {mode === 'login' ? 'Register' : 'Sign in'}
           </button>
         </p>
+
       </section>
     </main>
   )

@@ -70,6 +70,8 @@ interface MediaStatePayload {
   cameraEnabled?: boolean
 }
 
+type MeetingTab = 'participants' | 'chat' | 'transcript'
+
 const rtcConfiguration: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -101,7 +103,9 @@ export default function MeetingRoom({
   const [screenSharing, setScreenSharing] = useState(false)
   const [connecting, setConnecting] = useState(true)
   const [error, setError] = useState('')
-  const [participantPanelOpen, setParticipantPanelOpen] = useState(true)
+
+  const [activeTab, setActiveTab] =
+    useState<MeetingTab>('participants')
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
@@ -516,7 +520,7 @@ export default function MeetingRoom({
       behavior: 'smooth',
       block: 'end',
     })
-  }, [chatMessages])
+  }, [chatMessages, activeTab])
 
   function toggleMicrophone() {
     const audioTracks =
@@ -718,17 +722,6 @@ export default function MeetingRoom({
           <span className="meeting-status">
             {connecting ? 'Connecting…' : 'Meeting room'}
           </span>
-
-          <button
-            type="button"
-            className="participant-toggle"
-            onClick={() =>
-              setParticipantPanelOpen((open) => !open)
-            }
-            aria-expanded={participantPanelOpen}
-          >
-            Participants ({participants.length + 1})
-          </button>
         </div>
       </header>
 
@@ -738,195 +731,289 @@ export default function MeetingRoom({
         </div>
       )}
 
-      <section className="meeting-video-grid">
-        <article className="video-tile local-video-tile">
-          <video
-            ref={localVideoRef}
-            autoPlay
-            muted
-            playsInline
-          />
+      <div className="meeting-main-layout">
+        <section className="meeting-video-area">
+          <section className="meeting-video-grid">
+            <article className="video-tile local-video-tile">
+              <video
+                ref={localVideoRef}
+                autoPlay
+                muted
+                playsInline
+              />
 
-          <span className="video-label">
-            You ({displayName})
-            {muted ? ' · Muted' : ''}
-            {screenSharing ? ' · Sharing screen' : ''}
-          </span>
-        </article>
-
-        {participants.map((participant) => (
-          <RemoteVideoTile
-            key={participant.socketId}
-            participant={participant}
-          />
-        ))}
-
-        {!connecting && participants.length === 0 && (
-          <div className="meeting-empty-state">
-            <h2>You're in the meeting</h2>
-            <p>Waiting for other participants to join…</p>
-            <p>Share this meeting ID: {roomId}</p>
-          </div>
-        )}
-      </section>
-
-      {participantPanelOpen && (
-        <section
-          className="meeting-participants"
-          aria-label="Meeting participants"
-        >
-          <div className="meeting-participants-header">
-            <h2>Participants</h2>
-            <span>{participants.length + 1} in meeting</span>
-          </div>
-
-          <div className="meeting-participant-list">
-            <div className="meeting-participant">
-              <div className="participant-avatar">
-                {displayName.slice(0, 1).toUpperCase()}
-              </div>
-
-              <div className="participant-details">
-                <strong>You ({displayName})</strong>
-                <span>Local participant</span>
-              </div>
-
-              <div className="participant-status">
-                <span title={muted ? 'Microphone muted' : 'Microphone on'}>
-                  {muted ? '🔇' : '🎙️'}
-                </span>
-                <span title={cameraOff ? 'Camera off' : 'Camera on'}>
-                  {cameraOff ? '🚫' : '📹'}
-                </span>
-              </div>
-            </div>
+              <span className="video-label">
+                You ({displayName})
+                {muted ? ' · Muted' : ''}
+                {screenSharing ? ' · Sharing screen' : ''}
+              </span>
+            </article>
 
             {participants.map((participant) => (
-              <div
-                className="meeting-participant"
+              <RemoteVideoTile
                 key={participant.socketId}
-              >
-                <div className="participant-avatar">
-                  {participant.displayName.slice(0, 1).toUpperCase()}
-                </div>
-
-                <div className="participant-details">
-                  <strong>{participant.displayName}</strong>
-                  <span>Connected</span>
-                </div>
-
-                <div className="participant-status">
-                  <span
-                    title={
-                      participant.audioEnabled
-                        ? 'Microphone on'
-                        : 'Microphone muted'
-                    }
-                  >
-                    {participant.audioEnabled ? '🎙️' : '🔇'}
-                  </span>
-
-                  <span
-                    title={
-                      participant.cameraEnabled
-                        ? 'Camera on'
-                        : 'Camera off'
-                    }
-                  >
-                    {participant.cameraEnabled ? '📹' : '🚫'}
-                  </span>
-                </div>
-              </div>
+                participant={participant}
+              />
             ))}
-          </div>
+
+            {!connecting && participants.length === 0 && (
+              <div className="meeting-empty-state">
+                <h2>You're in the meeting</h2>
+                <p>Waiting for other participants to join…</p>
+                <p>Share this meeting ID: {roomId}</p>
+              </div>
+            )}
+          </section>
         </section>
-      )}
 
-      <section className="meeting-chat" aria-label="Meeting chat">
-        <div className="meeting-chat-header">
-          <h2>Meeting chat</h2>
-          <span>{chatMessages.length} messages</span>
-        </div>
+        <aside className="meeting-sidebar">
+          <div
+            className="meeting-sidebar-tabs"
+            role="tablist"
+            aria-label="Meeting panel tabs"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'participants'}
+              className={
+                activeTab === 'participants'
+                  ? 'meeting-sidebar-tab active'
+                  : 'meeting-sidebar-tab'
+              }
+              onClick={() => setActiveTab('participants')}
+            >
+              <span>Participants</span>
+              <span className="tab-count">
+                {participants.length + 1}
+              </span>
+            </button>
 
-        <div className="meeting-chat-messages" aria-live="polite">
-          {chatMessages.length === 0 ? (
-            <p className="meeting-chat-empty">
-              No messages yet. Say hello!
-            </p>
-          ) : (
-            chatMessages.map((message) => {
-              const isOwnMessage =
-                message.senderName === displayName
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'chat'}
+              className={
+                activeTab === 'chat'
+                  ? 'meeting-sidebar-tab active'
+                  : 'meeting-sidebar-tab'
+              }
+              onClick={() => setActiveTab('chat')}
+            >
+              Chat
+            </button>
 
-              return (
-                <div
-                  key={message.id}
-                  className={`chat-message ${
-                    isOwnMessage
-                      ? 'chat-message-own'
-                      : 'chat-message-other'
-                  }`}
-                >
-                  <div className="chat-message-meta">
-                    <span className="chat-sender">
-                      {isOwnMessage ? 'You' : message.senderName}
-                    </span>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'transcript'}
+              className={
+                activeTab === 'transcript'
+                  ? 'meeting-sidebar-tab active'
+                  : 'meeting-sidebar-tab'
+              }
+              onClick={() => setActiveTab('transcript')}
+            >
+              Transcript & Summary
+            </button>
+          </div>
 
-                    <span className="chat-time">
-                      {new Date(message.timestamp).toLocaleTimeString(
-                        [],
-                        {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        },
-                      )}
-                    </span>
+          <section
+            className="meeting-sidebar-panel"
+            role="tabpanel"
+            hidden={activeTab !== 'participants'}
+          >
+            <section
+              className="meeting-participants"
+              aria-label="Meeting participants"
+            >
+              <div className="meeting-participants-header">
+                <h2>Participants</h2>
+                <span>{participants.length + 1} in meeting</span>
+              </div>
+
+              <div className="meeting-participant-list">
+                <div className="meeting-participant">
+                  <div className="participant-avatar">
+                    {displayName.slice(0, 1).toUpperCase()}
                   </div>
 
-                  <div className="chat-message-bubble">
-                    {message.text}
+                  <div className="participant-details">
+                    <strong>You ({displayName})</strong>
+                    <span>Local participant</span>
+                  </div>
+
+                  <div className="participant-status">
+                    <span
+                      title={
+                        muted ? 'Microphone muted' : 'Microphone on'
+                      }
+                    >
+                      {muted ? '🔇' : '🎙️'}
+                    </span>
+
+                    <span
+                      title={cameraOff ? 'Camera off' : 'Camera on'}
+                    >
+                      {cameraOff ? '🚫' : '📹'}
+                    </span>
                   </div>
                 </div>
-              )
-            })
-          )}
 
-          <div ref={chatMessagesEndRef} />
-        </div>
+                {participants.map((participant) => (
+                  <div
+                    className="meeting-participant"
+                    key={participant.socketId}
+                  >
+                    <div className="participant-avatar">
+                      {participant.displayName
+                        .slice(0, 1)
+                        .toUpperCase()}
+                    </div>
 
-        {chatError && (
-          <p className="meeting-chat-error" role="alert">
-            {chatError}
-          </p>
-        )}
+                    <div className="participant-details">
+                      <strong>{participant.displayName}</strong>
+                      <span>Connected</span>
+                    </div>
 
-        <form
-          className="meeting-chat-form"
-          onSubmit={sendChatMessage}
-        >
-          <input
-            type="text"
-            value={chatInput}
-            onChange={(event) => setChatInput(event.target.value)}
-            placeholder="Write a message..."
-            aria-label="Chat message"
-            maxLength={1000}
-            autoComplete="off"
-            disabled={connecting}
-          />
+                    <div className="participant-status">
+                      <span
+                        title={
+                          participant.audioEnabled
+                            ? 'Microphone on'
+                            : 'Microphone muted'
+                        }
+                      >
+                        {participant.audioEnabled ? '🎙️' : '🔇'}
+                      </span>
 
-          <button
-            type="submit"
-            disabled={!chatInput.trim() || connecting}
+                      <span
+                        title={
+                          participant.cameraEnabled
+                            ? 'Camera on'
+                            : 'Camera off'
+                        }
+                      >
+                        {participant.cameraEnabled ? '📹' : '🚫'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </section>
+
+          <section
+            className="meeting-sidebar-panel"
+            role="tabpanel"
+            hidden={activeTab !== 'chat'}
           >
-            Send
-          </button>
-        </form>
-      </section>
+            <section
+              className="meeting-chat"
+              aria-label="Meeting chat"
+            >
+              <div className="meeting-chat-header">
+                <h2>Meeting chat</h2>
+                <span>{chatMessages.length} messages</span>
+              </div>
 
-      <section className="meeting-transcript-section">
-        <LiveTranscript meetingId={roomId} />
-      </section>
+              <div
+                className="meeting-chat-messages"
+                aria-live="polite"
+              >
+                {chatMessages.length === 0 ? (
+                  <p className="meeting-chat-empty">
+                    No messages yet. Say hello!
+                  </p>
+                ) : (
+                  chatMessages.map((message) => {
+                    const isOwnMessage =
+                      message.senderName === displayName
+
+                    return (
+                      <div
+                        key={message.id}
+                        className={`chat-message ${
+                          isOwnMessage
+                            ? 'chat-message-own'
+                            : 'chat-message-other'
+                        }`}
+                      >
+                        <div className="chat-message-meta">
+                          <span className="chat-sender">
+                            {isOwnMessage
+                              ? 'You'
+                              : message.senderName}
+                          </span>
+
+                          <span className="chat-time">
+                            {new Date(
+                              message.timestamp,
+                            ).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+
+                        <div className="chat-message-bubble">
+                          {message.text}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+
+                <div ref={chatMessagesEndRef} />
+              </div>
+
+              {chatError && (
+                <p className="meeting-chat-error" role="alert">
+                  {chatError}
+                </p>
+              )}
+
+              <form
+                className="meeting-chat-form"
+                onSubmit={sendChatMessage}
+              >
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(event) =>
+                    setChatInput(event.target.value)
+                  }
+                  placeholder="Write a message..."
+                  aria-label="Chat message"
+                  maxLength={1000}
+                  autoComplete="off"
+                  disabled={connecting}
+                />
+
+                <button
+                  type="submit"
+                  disabled={!chatInput.trim() || connecting}
+                >
+                  Send
+                </button>
+              </form>
+            </section>
+          </section>
+
+          <section
+            className="meeting-sidebar-panel"
+            role="tabpanel"
+            hidden={activeTab !== 'transcript'}
+          >
+            <section
+              className="meeting-transcript-section"
+              aria-label="Transcript and AI summary"
+            >
+              <LiveTranscript meetingId={roomId} />
+            </section>
+          </section>
+        </aside>
+      </div>
 
       <footer className="meeting-controls">
         <button
@@ -956,11 +1043,19 @@ export default function MeetingRoom({
         <button
           type="button"
           onClick={toggleMicrophone}
-          className={muted ? 'meeting-control active' : 'meeting-control'}
-          aria-label={muted ? 'Unmute microphone' : 'Mute microphone'}
-          title={muted ? 'Unmute microphone' : 'Mute microphone'}
+          className={
+            muted ? 'meeting-control active' : 'meeting-control'
+          }
+          aria-label={
+            muted ? 'Unmute microphone' : 'Mute microphone'
+          }
+          title={
+            muted ? 'Unmute microphone' : 'Mute microphone'
+          }
         >
-          <span aria-hidden="true">{muted ? '🔇' : '🎙️'}</span>
+          <span aria-hidden="true">
+            {muted ? '🔇' : '🎙️'}
+          </span>
           <span className="control-label">
             {muted ? 'Unmute' : 'Mute'}
           </span>
@@ -970,10 +1065,16 @@ export default function MeetingRoom({
           type="button"
           onClick={toggleCamera}
           className={
-            cameraOff ? 'meeting-control active' : 'meeting-control'
+            cameraOff
+              ? 'meeting-control active'
+              : 'meeting-control'
           }
-          aria-label={cameraOff ? 'Turn camera on' : 'Turn camera off'}
-          title={cameraOff ? 'Turn camera on' : 'Turn camera off'}
+          aria-label={
+            cameraOff ? 'Turn camera on' : 'Turn camera off'
+          }
+          title={
+            cameraOff ? 'Turn camera on' : 'Turn camera off'
+          }
         >
           <span aria-hidden="true">
             {cameraOff ? '🚫' : '📹'}

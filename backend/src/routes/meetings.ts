@@ -1,5 +1,5 @@
 
-import { Router, type Request, type Response } from 'express'
+import { Router, type Response } from 'express'
 import Meeting from '../Models/Meeting'
 import {
   requireAuth,
@@ -15,38 +15,81 @@ interface MeetingSummary {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function parseGeneratedSummary(value: unknown): MeetingSummary | null {
-  if (!isRecord(value) || typeof value.response !== 'string') {
+function validateSummary(value: unknown): MeetingSummary | null {
+  if (!isRecord(value) || typeof value.summary !== 'string') {
     return null
   }
 
-  let parsed: unknown
+  const keyDecisions = Array.isArray(value.keyDecisions)
+    ? value.keyDecisions
+    : []
 
-  try {
-    parsed = JSON.parse(value.response)
-  } catch {
-    return null
-  }
+  const actionItems = Array.isArray(value.actionItems)
+    ? value.actionItems
+    : []
 
   if (
-    !isRecord(parsed) ||
-    typeof parsed.summary !== 'string' ||
-    !Array.isArray(parsed.keyDecisions) ||
-    !parsed.keyDecisions.every((item) => typeof item === 'string') ||
-    !Array.isArray(parsed.actionItems) ||
-    !parsed.actionItems.every((item) => typeof item === 'string')
+    !keyDecisions.every((item) => typeof item === 'string') ||
+    !actionItems.every((item) => typeof item === 'string')
   ) {
     return null
   }
 
-  return {
-    summary: parsed.summary,
-    keyDecisions: parsed.keyDecisions,
-    actionItems: parsed.actionItems,
+  const summary = value.summary.trim()
+
+  if (!summary) {
+    return null
   }
+
+  return {
+    summary,
+    keyDecisions,
+    actionItems,
+  }
+}
+
+function parseJsonText(text: string): unknown {
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim()
+
+  try {
+    return JSON.parse(cleaned)
+  } catch {
+    const start = cleaned.indexOf('{')
+    const end = cleaned.lastIndexOf('}')
+
+    if (start === -1 || end <= start) {
+      return null
+    }
+
+    try {
+      return JSON.parse(cleaned.slice(start, end + 1))
+    } catch {
+      return null
+    }
+  }
+}
+
+function parseGeneratedSummary(value: unknown): MeetingSummary | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  if (typeof value.response === 'string') {
+    return validateSummary(parseJsonText(value.response))
+  }
+
+  if (isRecord(value.message) && typeof value.message.content === 'string') {
+    return validateSummary(parseJsonText(value.message.content))
+  }
+
+  return validateSummary(value)
 }
 
 // GET /api/meetings — get meetings belonging to the logged-in user
@@ -85,7 +128,6 @@ router.post(
         time?: string
       }
 
-      // Validate required fields.
       if (
         typeof title !== 'string' ||
         !title.trim() ||
@@ -102,7 +144,6 @@ router.post(
         return
       }
 
-      // Validate date and time format.
       if (
         !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
         !/^\d{2}:\d{2}$/.test(time)
@@ -115,7 +156,6 @@ router.post(
 
       const meetingDateTime = new Date(`${date}T${time}`)
 
-      // Reject invalid or past meeting dates.
       if (
         Number.isNaN(meetingDateTime.getTime()) ||
         meetingDateTime.getFullYear() !== Number(date.slice(0, 4)) ||
@@ -131,7 +171,6 @@ router.post(
         return
       }
 
-      // Save the meeting and its owner in MongoDB.
       const meeting = await Meeting.create({
         title: title.trim(),
         date,
@@ -231,7 +270,7 @@ router.put(
           $set: { transcript },
         },
         {
-          new: true,
+          returnDocument: 'after',
           runValidators: true,
         },
       ).select('transcript')
@@ -252,6 +291,50 @@ router.put(
 
       res.status(500).json({
         message: 'Could not save transcript.',
+      })
+    }
+  },
+)
+
+// GET /api/meetings/:id/summary — load a previously saved AI summary
+router.get(
+  '/:id/summary',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const rawId = req.params.id
+      const id = Array.isArray(rawId) ? rawId[0] : rawId
+
+      if (typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id)) {
+        res.status(400).json({
+          message: 'Invalid meeting ID.',
+        })
+        return
+      }
+
+      const meeting = await Meeting.findOne({
+        _id: id,
+        createdBy: req.userId,
+      }).select('summary keyDecisions actionItems summaryGeneratedAt')
+
+      if (!meeting) {
+        res.status(404).json({
+          message: 'Meeting not found.',
+        })
+        return
+      }
+
+      res.status(200).json({
+        summary: meeting.summary ?? '',
+        keyDecisions: meeting.keyDecisions ?? [],
+        actionItems: meeting.actionItems ?? [],
+        summaryGeneratedAt: meeting.summaryGeneratedAt ?? null,
+      })
+    } catch (error) {
+      console.error('Could not fetch meeting summary:', error)
+
+      res.status(500).json({
+        message: 'Could not fetch the saved meeting summary.',
       })
     }
   },
@@ -297,7 +380,9 @@ router.post(
       const ollamaUrl = (
         process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
       ).replace(/\/+$/, '')
+
       const model = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
+
       let ollamaResponse: globalThis.Response
 
       try {
@@ -328,11 +413,25 @@ router.post(
             options: {
               temperature: 0.2,
             },
-            prompt: `Summarize the following meeting transcript. Follow the required JSON schema exactly. Do not invent details; use empty arrays when none are stated.
+            prompt: `You are an assistant that writes accurate meeting summaries.
+
+Return only a valid JSON object with exactly these fields:
+{
+  "summary": "A concise summary of the meeting",
+  "keyDecisions": ["Decision 1"],
+  "actionItems": ["Action item 1"]
+}
+
+Rules:
+- Use only information present in the transcript.
+- Do not invent names, decisions, dates, or tasks.
+- If there are no key decisions, return an empty keyDecisions array.
+- If there are no action items, return an empty actionItems array.
+- The summary must be a meaningful, non-empty string.
 
 Meeting title: ${meeting.title}
 
-Transcript:
+Meeting transcript:
 ${transcript}`,
           }),
           signal: AbortSignal.timeout(120_000),
@@ -349,6 +448,7 @@ ${transcript}`,
 
       if (!ollamaResponse.ok) {
         const detail = await ollamaResponse.text()
+
         console.error(
           `Ollama returned ${ollamaResponse.status}:`,
           detail,
@@ -375,12 +475,15 @@ ${transcript}`,
 
       const generatedSummary = parseGeneratedSummary(generatedData)
 
-      if (!generatedSummary || !generatedSummary.summary.trim()) {
-        console.error('Ollama returned an invalid meeting summary.')
+      if (!generatedSummary) {
+        console.error(
+          'Ollama returned an invalid meeting summary. Response:',
+          JSON.stringify(generatedData).slice(0, 3000),
+        )
 
         res.status(502).json({
           message:
-            'Ollama returned an invalid summary. Try generating it again.',
+            'Ollama could not create a valid summary. Check the backend terminal for the model response.',
         })
         return
       }
@@ -397,7 +500,7 @@ ${transcript}`,
           },
         },
         {
-          new: true,
+          returnDocument: 'after',
           runValidators: true,
         },
       ).select('summary keyDecisions actionItems summaryGeneratedAt')
@@ -434,7 +537,6 @@ router.delete(
       const rawId = req.params.id
       const id = Array.isArray(rawId) ? rawId[0] : rawId
 
-      // Validate the MongoDB ObjectId.
       if (typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id)) {
         res.status(400).json({
           message: 'Invalid meeting ID.',
@@ -442,7 +544,6 @@ router.delete(
         return
       }
 
-      // Delete only if this meeting belongs to the logged-in user.
       const deletedMeeting = await Meeting.findOneAndDelete({
         _id: id,
         createdBy: req.userId,
