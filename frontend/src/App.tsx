@@ -18,7 +18,9 @@ type ApiMeeting = {
   time: string
 }
 
-const API_URL = 'http://localhost:5002/api/meetings'
+const API_URL = `${
+  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+}/meetings`
 
 const menuItems = [
   'Dashboard',

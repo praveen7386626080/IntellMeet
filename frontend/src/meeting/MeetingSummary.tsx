@@ -13,9 +13,7 @@ interface SummaryResult {
   message?: string
 }
 
-const API_URL = `${
-  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
-}/meetings`
+const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/meetings`
 
 const TOKEN_KEY = 'intellmeet-access-token'
 
@@ -57,7 +55,6 @@ export default function MeetingSummary({
     setLoading(true)
 
     try {
-      // Save the latest transcript before asking the backend to summarize it.
       const transcriptResponse = await fetch(
         `${API_URL}/${encodeURIComponent(meetingId)}/transcript`,
         {
@@ -78,7 +75,6 @@ export default function MeetingSummary({
         )
       }
 
-      // The backend calls Ollama and saves the AI results to MongoDB.
       const response = await fetch(
         `${API_URL}/${encodeURIComponent(meetingId)}/summary`,
         {

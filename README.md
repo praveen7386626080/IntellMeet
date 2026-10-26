@@ -1,12 +1,11 @@
 ## Day 15 – Live Audio Transcription Setup
 
-This feature converts meeting audio into text using the Whisper transcription service.
+Live meeting transcription uses the browser's Speech Recognition API, and transcripts are saved by the MERN backend.
 
 ### Prerequisites
 
 Install the following:
 - Node.js and npm
-- Python 3.10 or a compatible version supported by the project's dependencies
 - MongoDB Atlas account or a local MongoDB instance
 - Git
 
@@ -48,38 +47,7 @@ Start the backend:
 npm run dev
 ```
 
-### 3. Start the Whisper transcription service
-
-Open a separate terminal from the project root:
-
-```bash
-cd backend/whisper-service
-python -m venv whisper-env
-```
-
-Activate the virtual environment.
-
-**Windows PowerShell:**
-
-```powershell
-.\whisper-env\Scripts\Activate.ps1
-```
-
-Install the dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-Start the service using the command supported by the Python file:
-
-```bash
-python app.py
-```
-
-The service should run on `http://localhost:5001`. On first startup, the Whisper model may take time to download and load.
-
-### 4. Configure and start the frontend
+### 3. Configure and start the frontend
 
 Open another terminal:
 
@@ -102,18 +70,20 @@ npm run dev
 
 Open the local URL printed by Vite in your browser. Make sure the backend's `CLIENT_URL` matches the actual frontend origin.
 
-### 5. Test live transcription
+### 4. Test live transcription
 
 1. Log in to IntellMeet.
 2. Create or join a meeting.
 3. Allow microphone access.
 4. Speak into the microphone and check whether transcript text appears.
 
+Live transcription is supported in browsers that provide the Speech Recognition API, such as Google Chrome and Microsoft Edge.
+
 ### Troubleshooting
 
 - **Failed to fetch:** Check that the backend is running and the frontend API URL is correct.
 - **CORS error:** Ensure `CLIENT_URL` matches the frontend URL, including its port.
-- **Transcription unavailable:** Check that the Whisper service is running on port 5001.
+- **Speech recognition unavailable:** Use a browser that supports the Speech Recognition API, such as Google Chrome or Microsoft Edge.
 - **MongoDB error:** Verify your connection string and database access settings.
 - **Port already in use:** Stop the other process or configure an available port consistently across the relevant services.
 
