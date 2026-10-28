@@ -1,6 +1,10 @@
 /* =========================================================
    INTELLMEET — AI MEETING SUMMARY
    MeetingSummary.css
+
+   This panel always renders inside the Transcript panel's card,
+   so it is intentionally flat (no border / padding / shadow of its
+   own). Scrolling is handled by the parent .transcript-view-body.
    ========================================================= */
 
 .ai-summary-panel {
@@ -16,18 +20,18 @@
   --summary-danger: #d95767;
   --summary-danger-bg: #fff0f1;
 
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   width: 100%;
   min-width: 0;
-  margin-top: 18px;
-  padding: 20px;
-  border: 1px solid var(--summary-border);
-  border-radius: 16px;
-  background: var(--summary-bg);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--summary-text);
   box-sizing: border-box;
-  box-shadow: 0 5px 20px rgba(38, 51, 74, 0.04);
   font-family: "DM Sans", "Inter", sans-serif;
-  transition: background 0.25s ease, color 0.25s ease;
 }
 
 /* ---------- DARK THEME ---------- */
@@ -46,39 +50,30 @@
   --summary-danger-bg: #472b35;
 }
 
-/* ---------- HEADER ---------- */
+/* ---------- TOOLBAR (hint + badge + generate) ---------- */
 
-.ai-summary-header {
+.ai-summary-toolbar {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 14px;
-  margin-bottom: 18px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
 }
 
-.ai-summary-header h2 {
-  margin: 0 0 7px;
-  color: var(--summary-text);
-  font-size: 18px;
-  font-weight: 750;
-  letter-spacing: -0.4px;
-}
-
-.ai-summary-header p {
+.ai-summary-hint {
+  flex: 1 1 220px;
+  min-width: 0;
   margin: 0;
   color: var(--summary-muted);
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.5;
 }
-
-/* ---------- AI BADGE ---------- */
 
 .ai-summary-badge {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 11px;
+  padding: 6px 11px;
   border: 1px solid rgba(119, 118, 216, 0.12);
   border-radius: 30px;
   background: var(--summary-primary-soft);
@@ -88,15 +83,14 @@
   white-space: nowrap;
 }
 
-/* ---------- GENERATE BUTTON ---------- */
-
 .ai-summary-button {
-  min-height: 40px;
+  flex-shrink: 0;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 11px 16px;
+  padding: 8px 14px;
   border: 0;
   border-radius: 10px;
   background: var(--summary-primary);
@@ -104,17 +98,14 @@
   font-family: inherit;
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(119, 118, 216, 0.17);
-  transition:
-    background 0.2s ease,
-    transform 0.2s ease,
-    box-shadow 0.2s ease,
-    opacity 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
 }
 
 .ai-summary-button:hover:not(:disabled) {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   box-shadow: 0 7px 17px rgba(119, 118, 216, 0.24);
 }
 
@@ -128,16 +119,21 @@
   box-shadow: none;
 }
 
+.ai-summary-button:focus-visible {
+  outline: 3px solid rgba(119, 118, 216, 0.3);
+  outline-offset: 3px;
+}
+
 /* ---------- STATUS MESSAGES ---------- */
 
 .ai-summary-status,
 .ai-summary-success,
 .ai-summary-error {
-  margin-top: 13px;
-  padding: 11px 13px;
+  margin: 0;
+  padding: 9px 13px;
   border-radius: 10px;
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
 .ai-summary-status {
@@ -163,21 +159,29 @@
   display: grid;
   grid-template-columns: 1fr;
   gap: 12px;
-  margin-top: 20px;
+  margin: 0;
+}
+
+/* Wide screens: summary on top, decisions and actions side by side. */
+@media (min-width: 900px) {
+  .ai-summary-results {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ai-summary-card--wide {
+    grid-column: 1 / -1;
+  }
 }
 
 /* ---------- RESULT CARDS ---------- */
 
 .ai-summary-card {
   min-width: 0;
-  padding: 16px;
+  padding: 14px 16px;
   border: 1px solid var(--summary-border);
-  border-radius: 13px;
+  border-radius: 12px;
   background: var(--summary-soft);
-  transition:
-    border-color 0.2s ease,
-    background 0.2s ease,
-    transform 0.2s ease;
+  transition: border-color 0.2s ease;
 }
 
 .ai-summary-card:hover {
@@ -188,19 +192,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 11px;
+  margin: 0 0 9px;
   color: var(--summary-text);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 750;
 }
 
-/* ---------- RESULT TEXT ---------- */
-
 .ai-summary-card p,
 .ai-summary-card li {
-  color: var(--summary-muted);
-  font-size: 12px;
-  line-height: 1.8;
+  color: var(--summary-text);
+  opacity: 0.82;
+  font-size: 12.5px;
+  line-height: 1.7;
   overflow-wrap: anywhere;
 }
 
@@ -219,55 +222,26 @@
 }
 
 .ai-summary-card li + li {
-  margin-top: 7px;
-}
-
-/* ---------- FOCUS ACCESSIBILITY ---------- */
-
-.ai-summary-button:focus-visible {
-  outline: 3px solid rgba(119, 118, 216, 0.3);
-  outline-offset: 3px;
-}
-
-/* ---------- TABLET ---------- */
-
-@media (max-width: 760px) {
-  .ai-summary-panel {
-    padding: 16px;
-    border-radius: 14px;
-  }
-
-  .ai-summary-header h2 {
-    font-size: 17px;
-  }
-
-  .ai-summary-card {
-    padding: 14px;
-  }
+  margin-top: 6px;
 }
 
 /* ---------- MOBILE ---------- */
 
-@media (max-width: 460px) {
-  .ai-summary-panel {
-    padding: 13px;
-  }
-
-  .ai-summary-header {
-    flex-direction: column;
-    gap: 10px;
+@media (max-width: 520px) {
+  .ai-summary-hint {
+    flex-basis: 100%;
   }
 
   .ai-summary-badge {
-    align-self: flex-start;
+    order: -1;
   }
 
   .ai-summary-button {
-    width: 100%;
+    flex: 1 1 auto;
   }
 
-  .ai-summary-card h3 {
-    font-size: 13px;
+  .ai-summary-card {
+    padding: 12px 13px;
   }
 }
 

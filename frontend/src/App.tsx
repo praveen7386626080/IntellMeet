@@ -4,6 +4,7 @@ import './App.css'
 import MeetingRoom from './meeting/MeetingRoom'
 import LiveTranscript from './meeting/LiveTranscript'
 import { useAuth } from './auth/AuthContext'
+import ProfilePage from './auth/ProfilePage'
 import WorkspacePage, {
   type WorkspaceSection,
 } from './workspace/WorkspacePage'
@@ -44,6 +45,7 @@ const menuItems = [
   'Projects',
   'Team',
   'Analytics',
+  'Profile',
 ]
 
 function getToday() {
@@ -535,6 +537,7 @@ function App() {
               Projects: '▣',
               Team: '♧',
               Analytics: '▥',
+              Profile: '◎',
             }
 
             return (
@@ -856,6 +859,8 @@ function App() {
               token={token}
             />
         )}
+
+        {activePage === 'Profile' && <ProfilePage />}
       </main>
 
       {showMeetingForm && (

@@ -1,6 +1,14 @@
 /* =========================================================
    INTELLMEET — LIVE TRANSCRIPT
    LiveTranscript.css
+
+   Layout model (one source of truth):
+   .transcript-panel        flex column, owns its own height
+     ├─ .transcript-topbar      tabs + status       (fixed)
+     ├─ .transcript-controls    action buttons      (fixed)
+     ├─ .transcript-content     the transcript      (scrolls)
+     └─ .transcript-footnote    one-line note       (fixed)
+   Summary view uses .transcript-view-body           (scrolls)
    ========================================================= */
 
 .transcript-panel {
@@ -16,9 +24,12 @@
   --transcript-danger-bg: #fff0f1;
   --transcript-danger: #d95767;
 
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   width: 100%;
   min-width: 0;
-  margin-top: 0;
+  min-height: 0;
   padding: 18px;
   border: 1px solid var(--transcript-border);
   border-radius: 16px;
@@ -44,29 +55,65 @@
   --transcript-danger: #ff9aa5;
 }
 
-/* ---------- HEADER ---------- */
+.transcript-panel > * {
+  min-width: 0;
+}
 
-.transcript-header {
+.transcript-panel > .transcript-topbar,
+.transcript-panel > .transcript-controls,
+.transcript-panel > .transcript-error,
+.transcript-panel > .transcript-note {
+  flex: 0 0 auto;
+}
+
+/* ---------- TOP BAR: TABS + STATUS ---------- */
+
+.transcript-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 18px;
 }
 
-.transcript-header h2 {
-  margin: 0 0 6px;
-  color: var(--transcript-text);
-  font-size: 18px;
-  font-weight: 750;
-  letter-spacing: -0.4px;
+.transcript-view-tabs {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--transcript-border);
+  border-radius: 12px;
+  background: var(--transcript-soft);
 }
 
-.transcript-header p {
-  margin: 0;
+.transcript-view-tabs button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
   color: var(--transcript-muted);
+  font: inherit;
   font-size: 12px;
-  line-height: 1.5;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.transcript-view-tabs button:hover:not(.active) {
+  color: var(--transcript-text);
+}
+
+.transcript-view-tabs button.active {
+  background: var(--transcript-bg);
+  color: var(--transcript-primary);
+  box-shadow: 0 1px 4px rgba(38, 51, 74, 0.1);
+}
+
+.transcript-view-tabs button:focus-visible {
+  outline: 2px solid var(--transcript-primary);
+  outline-offset: 2px;
 }
 
 .transcript-status {
@@ -103,27 +150,25 @@
 .transcript-controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 9px;
-  margin-bottom: 16px;
+  align-items: center;
+  gap: 8px;
 }
 
 .transcript-controls button {
-  min-height: 38px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 9px 13px;
+  padding: 8px 13px;
   border: 1px solid transparent;
   border-radius: 10px;
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
   font-weight: 700;
-  transition:
-    background 0.2s ease,
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+  white-space: nowrap;
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .transcript-controls button:hover:not(:disabled) {
@@ -133,6 +178,11 @@
 .transcript-controls button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.transcript-controls button:focus-visible {
+  outline: 3px solid rgba(119, 118, 216, 0.3);
+  outline-offset: 3px;
 }
 
 .transcript-start {
@@ -156,14 +206,29 @@
   color: var(--transcript-primary);
 }
 
-/* ---------- TRANSCRIPT CONTENT ---------- */
+/* Save state sits on the right of the controls row instead of its own line. */
+.transcript-save {
+  margin-left: auto;
+  color: var(--transcript-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.transcript-save.is-error {
+  color: var(--transcript-danger);
+}
+
+/* ---------- TRANSCRIPT CONTENT (the only scrolling area) ---------- */
 
 .transcript-content {
+  flex: 1 1 auto;
   min-width: 0;
-  min-height: 160px;
-  max-height: 360px;
+  min-height: 140px;
+  max-height: 360px; /* standalone (dashboard) cap; the meeting room lifts it */
   overflow-y: auto;
-  padding: 16px;
+  overscroll-behavior: contain;
+  padding: 14px 16px;
   border: 1px solid var(--transcript-border);
   border-radius: 12px;
   background: var(--transcript-soft);
@@ -171,7 +236,7 @@
   box-sizing: border-box;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  line-height: 1.8;
+  line-height: 1.75;
   font-size: 13px;
   scrollbar-width: thin;
   scrollbar-color: var(--transcript-border) transparent;
@@ -179,6 +244,10 @@
 
 .transcript-content p {
   margin: 0 0 10px;
+}
+
+.transcript-content p:last-child {
+  margin-bottom: 0;
 }
 
 .transcript-empty {
@@ -191,11 +260,35 @@
   font-style: italic;
 }
 
-/* ---------- ERROR ---------- */
+.transcript-content::-webkit-scrollbar,
+.transcript-view-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.transcript-content::-webkit-scrollbar-thumb,
+.transcript-view-body::-webkit-scrollbar-thumb {
+  border-radius: 10px;
+  background: var(--transcript-border);
+}
+
+/* ---------- SUMMARY VIEW BODY ---------- */
+
+.transcript-view-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-height: 480px; /* standalone cap; the meeting room lifts it */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--transcript-border) transparent;
+}
+
+/* ---------- MESSAGES ---------- */
 
 .transcript-error {
-  margin: 12px 0;
-  padding: 11px 13px;
+  margin: 0;
+  padding: 10px 13px;
   border: 1px solid rgba(217, 87, 103, 0.15);
   border-radius: 10px;
   background: var(--transcript-danger-bg);
@@ -204,77 +297,62 @@
   line-height: 1.5;
 }
 
-/* ---------- NOTE ---------- */
-
 .transcript-note {
-  margin: 12px 0 0;
+  margin: 0;
   color: var(--transcript-muted);
   font-size: 11px;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
-/* ---------- SCROLLBAR ---------- */
-
-.transcript-content::-webkit-scrollbar {
-  width: 5px;
-}
-
-.transcript-content::-webkit-scrollbar-thumb {
-  border-radius: 10px;
-  background: var(--transcript-border);
-}
-
-/* ---------- FOCUS ---------- */
-
-.transcript-controls button:focus-visible {
-  outline: 3px solid rgba(119, 118, 216, 0.3);
-  outline-offset: 3px;
-}
-
-/* ---------- TABLET ---------- */
+/* ---------- RESPONSIVE ---------- */
 
 @media (max-width: 760px) {
   .transcript-panel {
-    padding: 15px;
+    padding: 14px;
     border-radius: 14px;
   }
 
-  .transcript-header h2 {
-    font-size: 16px;
-  }
-
   .transcript-content {
-    min-height: 140px;
+    min-height: 120px;
     max-height: 300px;
-    padding: 13px;
+    padding: 12px 13px;
   }
 }
 
-/* ---------- MOBILE ---------- */
-
-@media (max-width: 460px) {
-  .transcript-panel {
-    padding: 13px;
+@media (max-width: 520px) {
+  .transcript-topbar {
+    flex-wrap: wrap;
   }
 
-  .transcript-header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 9px;
+  /* Tabs take the full row; each tab gets equal width. */
+  .transcript-view-tabs {
+    flex: 1 1 100%;
   }
 
-  .transcript-controls {
-    gap: 7px;
+  .transcript-view-tabs button {
+    flex: 1 1 0;
+    padding: 8px 6px;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .transcript-status {
+    order: 2;
   }
 
   .transcript-controls button {
     flex: 1 1 auto;
-    padding: 9px 10px;
+    padding: 8px 10px;
     font-size: 11px;
   }
-}
 
-/* ---------- REDUCED MOTION ---------- */
+  .transcript-save {
+    flex: 1 1 100%;
+    margin-left: 0;
+    text-align: right;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .transcript-panel *,
