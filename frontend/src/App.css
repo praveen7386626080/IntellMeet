@@ -1326,3 +1326,78 @@ button:disabled {
     transition-duration: 0.01ms !important;
   }
 }
+/* ---------- AUTH GATE HEADER ---------- */
+
+.auth-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  font-family: system-ui, sans-serif;
+  background: #ffffff;
+  color: #26334a;
+}
+
+.user-auth-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #e7e9f2;
+  font-family: system-ui, sans-serif;
+}
+
+.signed-in-text {
+  font-size: 14px;
+  color: #374151;
+}
+
+.signed-in-text strong {
+  color: #111827;
+  font-weight: 700;
+}
+
+.logout-button {
+  padding: 7px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.logout-button:hover {
+  background: #f3f4f6;
+}
+
+/* Dark mode */
+:root[data-theme='dark'] .auth-loading {
+  background: #111827;
+  color: #f9fafb;
+}
+
+:root[data-theme='dark'] .user-auth-actions {
+  background: #1b2536;
+  border-bottom-color: #344158;
+}
+
+:root[data-theme='dark'] .signed-in-text {
+  color: #d1d5db;
+}
+
+:root[data-theme='dark'] .signed-in-text strong {
+  color: #ffffff;
+}
+
+:root[data-theme='dark'] .logout-button {
+  background: #222f43;
+  color: #edf1fa;
+  border-color: #46536b;
+}
+
+:root[data-theme='dark'] .logout-button:hover {
+  background: #38375f;
+  border-color: #aaa8ff;
+}
