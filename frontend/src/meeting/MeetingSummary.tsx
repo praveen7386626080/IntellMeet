@@ -204,27 +204,26 @@ export default function MeetingSummary({
 
   return (
     <section className="ai-summary-panel">
-      <div className="ai-summary-header">
-        <div>
-          <h2>AI Meeting Summary</h2>
-          <p>Generate meeting notes using your local AI model.</p>
-        </div>
+      <div className="ai-summary-toolbar">
+        <p className="ai-summary-hint">
+          Generate meeting notes from the transcript using your local AI model.
+        </p>
 
         <span className="ai-summary-badge">AI Powered</span>
-      </div>
 
-      <button
-        type="button"
-        className="ai-summary-button"
-        onClick={generateSummary}
-        disabled={loading || fetching}
-      >
-        {loading
-          ? 'Generating summary…'
-          : fetching
-            ? 'Loading saved summary…'
-            : '✨ Generate AI Summary'}
-      </button>
+        <button
+          type="button"
+          className="ai-summary-button"
+          onClick={generateSummary}
+          disabled={loading || fetching}
+        >
+          {loading
+            ? 'Generating summary…'
+            : fetching
+              ? 'Loading saved summary…'
+              : '✨ Generate AI Summary'}
+        </button>
+      </div>
 
       {fetching && (
         <p className="ai-summary-status" role="status">
@@ -252,7 +251,7 @@ export default function MeetingSummary({
 
       {result && (
         <div className="ai-summary-results">
-          <article className="ai-summary-card">
+          <article className="ai-summary-card ai-summary-card--wide">
             <h3>📝 Meeting Summary</h3>
             <p>{result.summary}</p>
           </article>

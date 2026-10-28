@@ -52,6 +52,7 @@ const TOKEN_KEY = 'intellmeet-access-token'
 export default function LiveTranscript({
   meetingId,
 }: LiveTranscriptProps) {
+  const [activeView, setActiveView] = useState<'transcript' | 'summary'>('transcript')
   const [token] = useState(() => localStorage.getItem(TOKEN_KEY))
 
   const [isListening, setIsListening] = useState(false)
@@ -64,6 +65,7 @@ export default function LiveTranscript({
   const [saveStatus, setSaveStatus] = useState('')
 
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
   const shouldListenRef = useRef(false)
   const loadedMeetingIdRef = useRef('')
   const loadingMeetingIdRef = useRef<string | undefined>(meetingId)
@@ -220,6 +222,13 @@ export default function LiveTranscript({
     }
   }, [transcript, meetingId, token])
 
+  // Keep the newest words in view while the transcript grows.
+  useEffect(() => {
+    if (!isListening) return
+    const el = contentRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [transcript, interimText, isListening])
+
   // Start browser-based speech recognition.
   function startTranscription() {
     setError('')
@@ -367,106 +376,142 @@ export default function LiveTranscript({
     URL.revokeObjectURL(url)
   }
 
+  const saveFailed = saveStatus === 'Save failed'
+  const saveLabel = saveStatus === 'Saved to MongoDB' ? 'Saved' : saveStatus
+
   return (
     <section className="transcript-panel">
-      <div className="transcript-header">
-        <div>
-          <h2>Meeting Transcript</h2>
-          <p>Free browser-based speech recognition</p>
+      <div className="transcript-topbar">
+        <div
+          className="transcript-view-tabs"
+          role="tablist"
+          aria-label="Meeting notes views"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeView === 'transcript'}
+            className={activeView === 'transcript' ? 'active' : ''}
+            onClick={() => setActiveView('transcript')}
+          >
+            Live Transcript
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeView === 'summary'}
+            className={activeView === 'summary' ? 'active' : ''}
+            onClick={() => setActiveView('summary')}
+          >
+            AI Summary &amp; Action Items
+          </button>
         </div>
 
-        <span
-          className={`transcript-status ${isListening ? 'active' : ''}`}
-        >
-          {isListening ? 'Listening' : 'Stopped'}
-        </span>
-      </div>
-
-      <div className="transcript-controls">
-        {!isListening ? (
-          <button
-            type="button"
-            onClick={startTranscription}
-            className="transcript-start"
-            disabled={loadingTranscript}
+        {activeView === 'transcript' && (
+          <span
+            className={`transcript-status ${isListening ? 'active' : ''}`}
           >
-            Start transcription
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={stopTranscription}
-            className="transcript-stop"
-          >
-            Stop transcription
-          </button>
+            {isListening ? 'Listening' : 'Stopped'}
+          </span>
         )}
-
-        <button
-          type="button"
-          onClick={downloadTranscript}
-          className="transcript-secondary"
-        >
-          Download text
-        </button>
-
-        <button
-          type="button"
-          onClick={clearTranscript}
-          className="transcript-secondary"
-          disabled={loadingTranscript}
-        >
-          Clear
-        </button>
       </div>
 
-      {loadingTranscript && meetingId && (
-        <p className="transcript-note">
-          Loading saved transcript…
-        </p>
-      )}
-
-      {error && (
-        <p className="transcript-error" role="alert">
-          {error}
-        </p>
-      )}
-
-      {meetingId && saveStatus && (
-        <p className="transcript-note" role="status">
-          {saveStatus}
-        </p>
-      )}
-
-      <div className="transcript-content" aria-live="polite">
-        {transcript || interimText ? (
-          <>
-            {transcript && <p>{transcript}</p>}
-
-            {interimText && (
-              <p className="transcript-interim">{interimText}</p>
+      {activeView === 'transcript' ? (
+        <>
+          <div className="transcript-controls">
+            {!isListening ? (
+              <button
+                type="button"
+                onClick={startTranscription}
+                className="transcript-start"
+                disabled={loadingTranscript}
+              >
+                Start transcription
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={stopTranscription}
+                className="transcript-stop"
+              >
+                Stop transcription
+              </button>
             )}
-          </>
-        ) : (
-          <p className="transcript-empty">
-            Click “Start transcription”, allow microphone access, and
-            speak clearly. Your recognized words will appear here.
+
+            <button
+              type="button"
+              onClick={downloadTranscript}
+              className="transcript-secondary"
+            >
+              Download text
+            </button>
+
+            <button
+              type="button"
+              onClick={clearTranscript}
+              className="transcript-secondary"
+              disabled={loadingTranscript}
+            >
+              Clear
+            </button>
+
+            {meetingId && saveLabel && (
+              <span
+                className={`transcript-save ${saveFailed ? 'is-error' : ''}`}
+                role="status"
+              >
+                {saveLabel}
+              </span>
+            )}
+          </div>
+
+          {loadingTranscript && meetingId && (
+            <p className="transcript-note">Loading saved transcript…</p>
+          )}
+
+          {error && (
+            <p className="transcript-error" role="alert">
+              {error}
+            </p>
+          )}
+
+          <div
+            className="transcript-content"
+            aria-live="polite"
+            ref={contentRef}
+          >
+            {transcript || interimText ? (
+              <>
+                {transcript && <p>{transcript}</p>}
+
+                {interimText && (
+                  <p className="transcript-interim">{interimText}</p>
+                )}
+              </>
+            ) : (
+              <p className="transcript-empty">
+                Click “Start transcription”, allow microphone access, and
+                speak clearly. Your recognized words will appear here.
+              </p>
+            )}
+          </div>
+
+          <p className="transcript-note transcript-footnote">
+            {meetingId
+              ? 'Free browser speech recognition · automatically saved to this meeting.'
+              : 'Free browser speech recognition · open a meeting room to enable saving.'}
           </p>
-        )}
-      </div>
-
-      <p className="transcript-note">
-        {meetingId
-          ? 'Your transcript is automatically saved to this meeting.'
-          : 'Open a meeting room to enable transcript saving.'}
-      </p>
-
-      {/* AI summary is available for meetings with a saved meeting ID. */}
-      {meetingId && (
-        <MeetingSummary
-          meetingId={meetingId}
-          transcript={transcript}
-        />
+        </>
+      ) : (
+        <div className="transcript-view-body">
+          {meetingId ? (
+            <MeetingSummary meetingId={meetingId} transcript={transcript} />
+          ) : (
+            <p className="transcript-empty">
+              Join a meeting to generate and save an AI summary.
+            </p>
+          )}
+        </div>
       )}
     </section>
   )

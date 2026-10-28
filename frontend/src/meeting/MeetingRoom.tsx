@@ -106,6 +106,8 @@ export default function MeetingRoom({
 
   const [activeTab, setActiveTab] =
     useState<MeetingTab>('participants')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [transcriptOpen, setTranscriptOpen] = useState(false)
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
@@ -719,6 +721,16 @@ export default function MeetingRoom({
         </div>
 
         <div className="meeting-header-actions">
+          <button
+            type="button"
+            className="top-people-button"
+            onClick={() => { setActiveTab('participants'); setSidebarOpen(true) }}
+            aria-label="Show participants"
+            title="Participants"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>{participants.length + 1}</span>
+          </button>
           <span className="meeting-status">
             {connecting ? 'Connecting…' : 'Meeting room'}
           </span>
@@ -764,9 +776,33 @@ export default function MeetingRoom({
               </div>
             )}
           </section>
+
+          <section
+            className={`transcript-below-videos${transcriptOpen ? ' is-open' : ''}`}
+          >
+            <button
+              type="button"
+              className="transcript-below-toggle"
+              aria-expanded={transcriptOpen}
+              onClick={() => setTranscriptOpen((open) => !open)}
+            >
+              <span aria-hidden="true">▤</span>
+              <span>Meeting Transcript &amp; AI Summary</span>
+              <span className="transcript-toggle-chevron">{transcriptOpen ? '−' : '+'}</span>
+            </button>
+            {transcriptOpen && (
+              <div className="transcript-below-content">
+                <LiveTranscript meetingId={roomId} />
+              </div>
+            )}
+          </section>
         </section>
 
-        <aside className="meeting-sidebar">
+        <aside className="meeting-sidebar" hidden={!sidebarOpen}>
+          <div className="meeting-sidebar-drawer-header">
+            <strong>{activeTab === 'participants' ? 'Participants' : activeTab === 'chat' ? 'Meeting chat' : 'Transcript & Summary'}</strong>
+            <button type="button" className="meeting-sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Close side panel" title="Close panel">×</button>
+          </div>
           <div
             className="meeting-sidebar-tabs"
             role="tablist"
@@ -803,19 +839,7 @@ export default function MeetingRoom({
               Chat
             </button>
 
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'transcript'}
-              className={
-                activeTab === 'transcript'
-                  ? 'meeting-sidebar-tab active'
-                  : 'meeting-sidebar-tab'
-              }
-              onClick={() => setActiveTab('transcript')}
-            >
-              Transcript & Summary
-            </button>
+
           </div>
 
           <section
@@ -849,13 +873,13 @@ export default function MeetingRoom({
                         muted ? 'Microphone muted' : 'Microphone on'
                       }
                     >
-                      {muted ? '🔇' : '🎙️'}
+                      {muted ? '♩̸' : '♩'}
                     </span>
 
                     <span
                       title={cameraOff ? 'Camera off' : 'Camera on'}
                     >
-                      {cameraOff ? '🚫' : '📹'}
+                      {cameraOff ? '▣̸' : '▣'}
                     </span>
                   </div>
                 </div>
@@ -1000,18 +1024,6 @@ export default function MeetingRoom({
             </section>
           </section>
 
-          <section
-            className="meeting-sidebar-panel"
-            role="tabpanel"
-            hidden={activeTab !== 'transcript'}
-          >
-            <section
-              className="meeting-transcript-section"
-              aria-label="Transcript and AI summary"
-            >
-              <LiveTranscript meetingId={roomId} />
-            </section>
-          </section>
         </aside>
       </div>
 
@@ -1032,12 +1044,7 @@ export default function MeetingRoom({
           }
           disabled={connecting}
         >
-          <span aria-hidden="true">
-            {screenSharing ? '🛑' : '🖥️'}
-          </span>
-          <span className="control-label">
-            {screenSharing ? 'Stop sharing' : 'Share screen'}
-          </span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M12 13V7m-3 3 3-3 3 3"/></svg>
         </button>
 
         <button
@@ -1053,12 +1060,7 @@ export default function MeetingRoom({
             muted ? 'Unmute microphone' : 'Mute microphone'
           }
         >
-          <span aria-hidden="true">
-            {muted ? '🔇' : '🎙️'}
-          </span>
-          <span className="control-label">
-            {muted ? 'Unmute' : 'Mute'}
-          </span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>{muted && <path d="m3 3 18 18"/>}</svg>
         </button>
 
         <button
@@ -1076,12 +1078,7 @@ export default function MeetingRoom({
             cameraOff ? 'Turn camera on' : 'Turn camera off'
           }
         >
-          <span aria-hidden="true">
-            {cameraOff ? '🚫' : '📹'}
-          </span>
-          <span className="control-label">
-            {cameraOff ? 'Camera on' : 'Camera off'}
-          </span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/>{cameraOff && <path d="m3 3 18 18"/>}</svg>
         </button>
 
         <button
@@ -1091,10 +1088,22 @@ export default function MeetingRoom({
           aria-label="Leave meeting"
           title="Leave meeting"
         >
-          <span aria-hidden="true">📞</span>
-          <span className="control-label">Leave</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg"><path d="M4 14.5c4.8 4.8 11.2 4.8 16 0l-3-3-3 2a12 12 0 0 1-4 0l-3-2-3 3Z"/></svg>
         </button>
       </footer>
+
+      <button
+        type="button"
+        className={`floating-chat-button ${sidebarOpen && activeTab === 'chat' ? 'active' : ''}`}
+        onClick={() => {
+          if (sidebarOpen && activeTab === 'chat') setSidebarOpen(false)
+          else { setActiveTab('chat'); setSidebarOpen(true) }
+        }}
+        aria-label="Open chat"
+        title="Chat"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-4-.9L3 21l1.9-5.5a9 9 0 0 1-.9-4A8.5 8.5 0 0 1 12.5 3h.5a8.5 8.5 0 0 1 8 8v.5Z"/><path d="M8 10h8M8 14h6"/></svg>
+      </button>
     </main>
   )
 }

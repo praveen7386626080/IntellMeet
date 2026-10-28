@@ -10,6 +10,7 @@ import meetingsRouter from './routes/meetings'
 import authRouter from './routes/auth'
 import transcriptsRouter from './routes/transcripts'
 import workspaceRouter from './routes/workspace'
+import profileRouter from './routes/profile'
 
 dotenv.config()
 
@@ -22,6 +23,7 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173'
 app.use(cors({ origin: CLIENT_URL }))
 
 app.use('/api/auth', express.json({ limit: '10kb' }), authRouter)
+app.use('/api/profile', express.json({ limit: '10kb' }), profileRouter)
 
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -160,6 +162,17 @@ io.on('connection', (socket) => {
         displayName,
       })
 
+      // Send current raised-hand states to the participant who just joined.
+      const handStates = [...(io.sockets.adapter.rooms.get(roomId) ?? [])].map((socketId) => {
+        const peerSocket = io.sockets.sockets.get(socketId)
+        return {
+          socketId,
+          displayName: (peerSocket?.data.displayName as string | undefined) ?? 'Participant',
+          raised: Boolean(peerSocket?.data.handRaised),
+        }
+      })
+      socket.emit('hand:initial-state', handStates)
+
       console.log(`${displayName} joined meeting room ${roomId}`)
     } catch (error) {
       console.error('Failed to join meeting room:', error)
@@ -222,6 +235,38 @@ io.on('connection', (socket) => {
 
   socket.on('webrtc:ice', (payload: unknown) => {
     relayToPeer('webrtc:ice', payload)
+  })
+
+  // Real-time raise-hand support. The server derives participant identity
+  // from this socket and never trusts a client-supplied socket ID or room ID.
+  socket.on('hand:raise', (payload: unknown) => {
+    const roomId = socket.data.roomId as string | undefined
+    const displayName = socket.data.displayName as string | undefined
+    if (!roomId || !displayName) {
+      socket.emit('room:error', { message: 'Join a meeting before raising your hand.' })
+      return
+    }
+    if (payload !== undefined && (!payload || typeof payload !== 'object' || (payload as Record<string, unknown>).roomId !== roomId)) {
+      socket.emit('room:error', { message: 'Invalid raise-hand request.' })
+      return
+    }
+    socket.data.handRaised = true
+    io.to(roomId).emit('hand:state', { socketId: socket.id, displayName, raised: true })
+  })
+
+  socket.on('hand:lower', (payload: unknown) => {
+    const roomId = socket.data.roomId as string | undefined
+    const displayName = socket.data.displayName as string | undefined
+    if (!roomId || !displayName) {
+      socket.emit('room:error', { message: 'Join a meeting before lowering your hand.' })
+      return
+    }
+    if (payload !== undefined && (!payload || typeof payload !== 'object' || (payload as Record<string, unknown>).roomId !== roomId)) {
+      socket.emit('room:error', { message: 'Invalid lower-hand request.' })
+      return
+    }
+    socket.data.handRaised = false
+    io.to(roomId).emit('hand:state', { socketId: socket.id, displayName, raised: false })
   })
 
   // Real-time meeting chat.
@@ -298,11 +343,19 @@ io.on('connection', (socket) => {
       return
     }
 
+    if (socket.data.handRaised) {
+      io.to(currentRoomId).emit('hand:state', {
+        socketId: socket.id,
+        displayName: (socket.data.displayName as string | undefined) ?? 'Participant',
+        raised: false,
+      })
+    }
     socket.to(currentRoomId).emit('peer:left', {
       socketId: socket.id,
     })
 
     await socket.leave(currentRoomId)
+    delete socket.data.handRaised
 
     delete socket.data.roomId
     delete socket.data.displayName
@@ -314,6 +367,13 @@ io.on('connection', (socket) => {
     const roomId = socket.data.roomId as string | undefined
 
     if (roomId) {
+      if (socket.data.handRaised) {
+        io.to(roomId).emit('hand:state', {
+          socketId: socket.id,
+          displayName: (socket.data.displayName as string | undefined) ?? 'Participant',
+          raised: false,
+        })
+      }
       socket.to(roomId).emit('peer:left', {
         socketId: socket.id,
       })
@@ -346,6 +406,7 @@ async function startServer() {
       console.log(`IntellMeet API running at http://localhost:${PORT}`)
       console.log('Socket.IO meeting signaling server is ready.')
       console.log('Real-time meeting chat is ready.')
+      console.log('Real-time raise-hand support is ready.')
     })
   } catch (error) {
     console.error('Could not connect to MongoDB:', error)
