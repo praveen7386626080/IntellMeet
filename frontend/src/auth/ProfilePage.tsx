@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent, type ChangeEvent } from 'react'
 import './ProfilePage.css'
 import { useAuth } from './AuthContext'
 
@@ -45,9 +45,9 @@ export default function ProfilePage() {
   const [deleteToken, setDeleteToken] = useState('')
   const [deleting, setDeleting] = useState(false)
 
-  const headers = (): HeadersInit => ({
+  const headers = useCallback((): HeadersInit => ({
     Authorization: `Bearer ${token}`,
-  })
+  }), [token])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -80,7 +80,7 @@ export default function ProfilePage() {
     }
     void loadProfile()
     return () => controller.abort()
-  }, [token])
+  }, [headers, token])
 
   function updateField(field: 'name' | 'phoneNumber' | 'designation' | 'bio', value: string) {
     setProfile((current) => ({ ...current, [field]: value }))
