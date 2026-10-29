@@ -874,11 +874,12 @@
 
 
 /* =========================================================
-   ROOM LAYOUT — the page itself never scrolls; the video grid
-   and the transcript panel each scroll internally.
+   ROOM LAYOUT — the page itself never scrolls. Videos and the
+   transcript each use their own space; only text scrolls.
    ========================================================= */
-/* The auth bar sits above the room inside #root, so the room must take only
-   the height that is left (not a full 100dvh) or the controls fall off-screen. */
+
+/* The auth bar sits above the room inside #root, so the room takes only the
+   height that is left (not a full 100dvh) or the controls fall off-screen. */
 #root:has(.meeting-room) {
   height: 100dvh;
   min-height: 0;
@@ -901,77 +902,56 @@
   justify-content: flex-start;
 }
 
-/* Videos take whatever height the transcript dock leaves free. */
-.meeting-video-grid {
-  flex: 1 1 0;
-  height: auto;
-  min-height: 150px; /* videos never collapse; the dock gives up space first */
-  overflow-y: auto;
-}
-
 .meeting-controls {
   flex-shrink: 0;
   z-index: 15;
 }
 
-/* While the transcript dock is open the video area is short, so the videos
-   become a single-row strip: every tile keeps 16:9 at the height available,
-   and the strip scrolls sideways if there are many participants. */
-.meeting-video-area:has(.transcript-below-videos.is-open) .meeting-video-grid {
+/* ---------- VIDEO GRID ----------
+   MeetingRoom.tsx measures this area and sets --tile-w: the largest 4:3 tile
+   that fits everyone. Tiles are centred, so a short last row is centred too.
+   If the tiles cannot fit even at the minimum size, the area scrolls. */
+.meeting-video-grid {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 150px;
+  /* Side padding squeezes each row to --tile-cols tiles, so rows stay balanced
+     (5 people → 3 + 2) and centred. Padding is used instead of max-width so the
+     measured size in MeetingRoom.tsx does not change when it is applied. */
+  box-sizing: border-box;
+  padding-inline: max(
+    0px,
+    calc(
+      (
+          100% - var(--tile-cols, 12) * var(--tile-w, 320px) -
+            (var(--tile-cols, 12) - 1) * 12px
+        ) / 2
+    )
+  );
   display: flex;
-  flex-wrap: nowrap;
-  align-items: stretch;
-  justify-content: safe center;
-  gap: 12px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-bottom: 2px;
+  flex-wrap: wrap;
+  align-content: safe center;
+  justify-content: center;
+  gap: 12px; /* keep in sync with VIDEO_GAP in MeetingRoom.tsx */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-.meeting-video-area:has(.transcript-below-videos.is-open) .video-tile {
+.meeting-video-grid .video-tile,
+.meeting-video-grid .meeting-empty-state {
   flex: 0 0 auto;
+  width: var(--tile-w, 320px);
+  height: auto;
   min-height: 0;
-  height: 100%;
-  width: auto;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 4 / 3; /* keep in sync with VIDEO_TILE_RATIO in MeetingRoom.tsx */
 }
 
-.meeting-video-area:has(.transcript-below-videos.is-open) .meeting-empty-state {
-  flex: 0 0 auto;
-  min-height: 0;
-  height: 100%;
-  width: min(100%, 420px);
-  gap: 4px;
-  padding: 10px 14px;
+.meeting-video-grid .meeting-empty-state {
+  padding: 12px;
   overflow: hidden;
 }
 
-.meeting-video-area:has(.transcript-below-videos.is-open) .meeting-empty-state h2 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.meeting-video-area:has(.transcript-below-videos.is-open) .meeting-empty-state p {
-  font-size: 12px;
-}
-
-@media (max-width: 760px) {
-  .meeting-video-area:has(.transcript-below-videos.is-open) .meeting-empty-state h2 {
-    font-size: 14px;
-  }
-
-  /* Keep the short placeholder to a title + one line on phones. */
-  .meeting-video-area:has(.transcript-below-videos.is-open) .meeting-empty-state p:nth-of-type(2) {
-    display: none;
-  }
-}
-
-/* =========================================================
-   TRANSCRIPT DOCK (below the videos)
-   One card. Collapsed = just the title bar. Open = fixed,
-   predictable height; only the transcript text / AI summary
-   scrolls inside it (see LiveTranscript.css).
-   ========================================================= */
+/* ---------- TRANSCRIPT DOCK ---------- */
 .transcript-below-videos {
   flex: 0 0 auto;
   width: 100%;
@@ -982,12 +962,6 @@
   border: 1px solid var(--meeting-border);
   border-radius: 16px;
   background: var(--meeting-surface);
-}
-
-.transcript-below-videos.is-open {
-  flex: 0 1 auto;
-  height: clamp(280px, 46vh, 500px);
-  min-height: 210px;
 }
 
 .transcript-below-toggle {
@@ -1040,19 +1014,81 @@
   max-height: none;
 }
 
+/* ---------- WIDE SCREENS: videos left, transcript panel right ---------- */
+@media (min-width: 1100px) {
+  .meeting-video-area:has(.transcript-below-videos.is-open) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(380px, 33vw, 520px);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .meeting-video-area:has(.transcript-below-videos.is-open) .meeting-video-grid {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 0;
+  }
+
+  .transcript-below-videos.is-open {
+    grid-column: 2;
+    grid-row: 1;
+    height: auto;
+    min-height: 0;
+  }
+}
+
+/* ---------- NARROW SCREENS: videos on top, transcript below ---------- */
+@media (max-width: 1099px) {
+  .transcript-below-videos.is-open {
+    flex: 0 1 auto;
+    height: clamp(280px, 46vh, 500px);
+    min-height: 210px;
+  }
+
+  /* While the transcript is open the video area is short, so videos become a
+     single row (16:9 each) that scrolls sideways if many people join. */
+  .meeting-video-area:has(.transcript-below-videos.is-open) .meeting-video-grid {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    justify-content: safe center;
+    gap: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-inline: 0;
+    padding-bottom: 2px;
+  }
+
+  .meeting-video-area:has(.transcript-below-videos.is-open) .meeting-video-grid .video-tile {
+    flex: 0 0 auto;
+    height: 100%;
+    width: auto;
+    aspect-ratio: 16 / 9;
+  }
+
+  .meeting-video-area:has(.transcript-below-videos.is-open) .meeting-video-grid .meeting-empty-state {
+    flex: 0 0 auto;
+    height: 100%;
+    aspect-ratio: auto;
+    width: min(100%, 420px);
+    gap: 4px;
+    padding: 10px 14px;
+  }
+
+  .meeting-video-area:has(.transcript-below-videos.is-open) .meeting-empty-state h2 {
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .meeting-video-area:has(.transcript-below-videos.is-open) .meeting-empty-state p {
+    font-size: 12px;
+  }
+}
+
 /* Short screens (small laptops): trade chrome for transcript space. */
 @media (max-height: 780px) {
   .meeting-header {
     padding-bottom: 8px;
-  }
-
-  .meeting-video-grid {
-    min-height: 110px;
-  }
-
-  .transcript-below-videos.is-open {
-    height: clamp(260px, 56vh, 420px);
-    min-height: 250px;
   }
 
   .transcript-below-toggle {
@@ -1064,18 +1100,25 @@
   .transcript-below-content {
     padding: 0 14px 12px;
   }
+}
+
+@media (max-width: 1099px) and (max-height: 780px) {
+  .meeting-video-grid {
+    min-height: 110px;
+  }
+
+  .transcript-below-videos.is-open {
+    height: clamp(260px, 56vh, 420px);
+    min-height: 250px;
+  }
 
   .transcript-below-content .transcript-footnote {
     display: none;
   }
 }
 
+/* ---------- PHONES ---------- */
 @media (max-width: 760px) {
-  .meeting-video-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: minmax(90px, 1fr);
-  }
-
   .meeting-video-grid {
     min-height: 100px;
   }
@@ -1083,5 +1126,14 @@
   .transcript-below-videos.is-open {
     height: clamp(300px, 56vh, 460px);
     min-height: 240px;
+  }
+
+  .meeting-video-area:has(.transcript-below-videos.is-open) .meeting-empty-state h2 {
+    font-size: 14px;
+  }
+
+  /* Keep the short placeholder to a title + one line on phones. */
+  .meeting-video-area:has(.transcript-below-videos.is-open) .meeting-empty-state p:nth-of-type(2) {
+    display: none;
   }
 }

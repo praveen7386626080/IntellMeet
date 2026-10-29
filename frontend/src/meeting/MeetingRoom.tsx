@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { FormEvent } from 'react'
+import type { CSSProperties, FormEvent } from 'react'
 import type { Socket } from 'socket.io-client'
 import { createMeetingSocket } from './meetingSocket'
 import './MeetingRoom.css'
@@ -712,6 +712,13 @@ export default function MeetingRoom({
     setChatInput('')
   }
 
+  // Pick the video grid's column count from how many tiles are on screen,
+  // so tiles stay as large as possible as people join (1 → 2 → 3 → 4 columns).
+  const tileCount =
+    participants.length + 1 + (!connecting && participants.length === 0 ? 1 : 0)
+  const gridColumns =
+    tileCount <= 1 ? 1 : tileCount <= 4 ? 2 : tileCount <= 9 ? 3 : 4
+
   return (
     <main className="meeting-room">
       <header className="meeting-header">
@@ -745,7 +752,11 @@ export default function MeetingRoom({
 
       <div className="meeting-main-layout">
         <section className="meeting-video-area">
-          <section className="meeting-video-grid">
+          <section
+            className="meeting-video-grid"
+            style={{ '--cols': gridColumns } as CSSProperties}
+            data-tiles={tileCount}
+          >
             <article className="video-tile local-video-tile">
               <video
                 ref={localVideoRef}
