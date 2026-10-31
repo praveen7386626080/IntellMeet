@@ -10,6 +10,7 @@ import type { Socket } from 'socket.io-client'
 import { createMeetingSocket } from './meetingSocket'
 import './MeetingRoom.css'
 import LiveTranscript from './LiveTranscript'
+import { useAuth } from '../auth/AuthContext'
 
 interface MeetingRoomProps {
   roomId: string
@@ -32,6 +33,8 @@ interface RemoteParticipant {
 
 interface RoomJoinedPayload {
   peers: PeerInfo[]
+  role?: 'Host' | 'Participant'
+  hostId?: string | null
 }
 
 interface PeerJoinedPayload {
@@ -70,7 +73,24 @@ interface MediaStatePayload {
   cameraEnabled?: boolean
 }
 
+interface HandStatePayload {
+  socketId: string
+  displayName?: string
+  raised: boolean
+}
+
+interface HandParticipant {
+  socketId: string
+  displayName: string
+  raised: boolean
+}
+
+interface RoomEndedPayload {
+  message?: string
+}
+
 type MeetingTab = 'participants' | 'chat' | 'transcript'
+type MeetingRole = 'Host' | 'Participant'
 
 const rtcConfiguration: RTCConfiguration = {
   iceServers: [
@@ -83,11 +103,14 @@ export default function MeetingRoom({
   displayName,
   onLeave,
 }: MeetingRoomProps) {
+  const { token } = useAuth()
+
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const chatMessagesEndRef = useRef<HTMLDivElement>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const screenStreamRef = useRef<MediaStream | null>(null)
   const socketRef = useRef<Socket | null>(null)
+  const leavingRef = useRef(false)
 
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(
     new Map(),
@@ -96,6 +119,7 @@ export default function MeetingRoom({
   const screenSharingRef = useRef(false)
   const mutedRef = useRef(false)
   const cameraOffRef = useRef(false)
+  const handRaisedRef = useRef(false)
 
   const [participants, setParticipants] = useState<RemoteParticipant[]>([])
   const [muted, setMuted] = useState(false)
@@ -103,6 +127,10 @@ export default function MeetingRoom({
   const [screenSharing, setScreenSharing] = useState(false)
   const [connecting, setConnecting] = useState(true)
   const [error, setError] = useState('')
+
+  const [role, setRole] = useState<MeetingRole>('Participant')
+  const [handRaised, setHandRaised] = useState(false)
+  const [raisedHands, setRaisedHands] = useState<HandParticipant[]>([])
 
   const [activeTab, setActiveTab] =
     useState<MeetingTab>('participants')
@@ -139,6 +167,10 @@ export default function MeetingRoom({
         (participant) => participant.socketId !== socketId,
       ),
     )
+
+    setRaisedHands((current) =>
+      current.filter((participant) => participant.socketId !== socketId),
+    )
   }, [])
 
   const stopLocalMedia = useCallback(() => {
@@ -154,31 +186,101 @@ export default function MeetingRoom({
       track.stop()
     })
     localStreamRef.current = null
+
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null
+    }
+
+    setScreenSharing(false)
   }, [])
 
-  const leaveMeeting = useCallback(() => {
-    socketRef.current?.emit('room:leave', { roomId })
-
+  const closeMeetingConnections = useCallback(() => {
     peerConnectionsRef.current.forEach((connection) => {
+      connection.ontrack = null
+      connection.onicecandidate = null
+      connection.onconnectionstatechange = null
       connection.close()
     })
-    peerConnectionsRef.current.clear()
 
+    peerConnectionsRef.current.clear()
     stopLocalMedia()
 
-    socketRef.current?.disconnect()
-    socketRef.current = null
+    const socket = socketRef.current
 
+    if (socket) {
+      socket.removeAllListeners()
+      socket.disconnect()
+      socketRef.current = null
+    }
+  }, [stopLocalMedia])
+
+  const leaveMeeting = useCallback(() => {
+    if (leavingRef.current) return
+    leavingRef.current = true
+
+    socketRef.current?.emit('room:leave', { roomId })
+
+    closeMeetingConnections()
     onLeave()
-  }, [onLeave, roomId, stopLocalMedia])
+  }, [closeMeetingConnections, onLeave, roomId])
+
+  const raiseHand = useCallback(() => {
+    const socket = socketRef.current
+
+    if (!socket?.connected || handRaisedRef.current) return
+
+    handRaisedRef.current = true
+    setHandRaised(true)
+
+    socket.emit('hand:raise', { roomId })
+  }, [roomId])
+
+  const lowerHand = useCallback(() => {
+    const socket = socketRef.current
+
+    if (!socket?.connected || !handRaisedRef.current) return
+
+    handRaisedRef.current = false
+    setHandRaised(false)
+
+    socket.emit('hand:lower', { roomId })
+  }, [roomId])
+
+  const endMeetingForAll = useCallback(() => {
+    if (role !== 'Host') return
+
+    const confirmed = window.confirm(
+      'Are you sure you want to end this meeting for everyone?',
+    )
+
+    if (!confirmed) return
+
+    const socket = socketRef.current
+
+    if (!socket?.connected) {
+      setError('Not connected to the meeting server.')
+      return
+    }
+
+    socket.emit('room:end')
+  }, [role])
 
   useEffect(() => {
     let cancelled = false
     let socket: Socket | null = null
     const connections = peerConnectionsRef.current
 
+    leavingRef.current = false
+    handRaisedRef.current = false
+
     async function startMeeting() {
       try {
+        if (!token) {
+          setError('Authentication required. Please log in again.')
+          setConnecting(false)
+          return
+        }
+
         if (!navigator.mediaDevices?.getUserMedia) {
           throw new Error(
             'Camera access is unavailable. Open IntellMeet using localhost or HTTPS.',
@@ -201,7 +303,7 @@ export default function MeetingRoom({
           localVideoRef.current.srcObject = stream
         }
 
-        socket = createMeetingSocket()
+        socket = createMeetingSocket(token)
         socketRef.current = socket
 
         function createPeerConnection(
@@ -320,6 +422,7 @@ export default function MeetingRoom({
 
           setConnecting(false)
           setError('')
+          setRole(payload.role === 'Host' ? 'Host' : 'Participant')
 
           for (const peer of payload.peers ?? []) {
             if (peer.socketId !== socket?.id) {
@@ -332,6 +435,78 @@ export default function MeetingRoom({
               }
             }
           }
+        })
+
+        socket.on('hand:initial-state', (states: HandStatePayload[]) => {
+          if (!Array.isArray(states)) return
+
+          setRaisedHands(
+            states.map((state) => ({
+              socketId: state.socketId,
+              displayName: state.displayName || 'Participant',
+              raised: Boolean(state.raised),
+            })),
+          )
+
+          const ownState = states.find(
+            (state) => state.socketId === socket?.id,
+          )
+
+          const ownHandRaised = Boolean(ownState?.raised)
+          handRaisedRef.current = ownHandRaised
+          setHandRaised(ownHandRaised)
+        })
+
+        socket.on('hand:state', (payload: HandStatePayload) => {
+          if (!payload || typeof payload.socketId !== 'string') return
+
+          setRaisedHands((current) => {
+            const existing = current.find(
+              (participant) =>
+                participant.socketId === payload.socketId,
+            )
+
+            if (existing) {
+              return current.map((participant) =>
+                participant.socketId === payload.socketId
+                  ? {
+                      ...participant,
+                      displayName:
+                        payload.displayName ?? participant.displayName,
+                      raised: Boolean(payload.raised),
+                    }
+                  : participant,
+              )
+            }
+
+            return [
+              ...current,
+              {
+                socketId: payload.socketId,
+                displayName: payload.displayName || 'Participant',
+                raised: Boolean(payload.raised),
+              },
+            ]
+          })
+
+          if (payload.socketId === socket?.id) {
+            handRaisedRef.current = Boolean(payload.raised)
+            setHandRaised(Boolean(payload.raised))
+          }
+        })
+
+        socket.on('room:ended', (payload: RoomEndedPayload) => {
+          if (leavingRef.current) return
+          leavingRef.current = true
+
+          closeMeetingConnections()
+
+          window.alert(
+            payload?.message ||
+              'The Host has ended this meeting for everyone.',
+          )
+
+          onLeave()
         })
 
         socket.on('peer:joined', (payload: PeerJoinedPayload) => {
@@ -515,7 +690,14 @@ export default function MeetingRoom({
         socketRef.current = null
       }
     }
-  }, [roomId, displayName, removeParticipant])
+  }, [
+    roomId,
+    displayName,
+    removeParticipant,
+    token,
+    closeMeetingConnections,
+    onLeave,
+  ])
 
   useEffect(() => {
     chatMessagesEndRef.current?.scrollIntoView({
@@ -712,25 +894,40 @@ export default function MeetingRoom({
     setChatInput('')
   }
 
+  const raisedHandSocketIds = new Set(
+    raisedHands
+      .filter((participant) => participant.raised)
+      .map((participant) => participant.socketId),
+  )
+
   return (
     <main className="meeting-room">
       <header className="meeting-header">
         <div>
           <h1>IntellMeet</h1>
           <p>Meeting room: {roomId}</p>
+          <span className="meeting-role-label">
+            {role === 'Host' ? 'Host' : 'Participant'}
+          </span>
         </div>
 
         <div className="meeting-header-actions">
           <button
             type="button"
             className="top-people-button"
-            onClick={() => { setActiveTab('participants'); setSidebarOpen(true) }}
+            onClick={() => {
+              setActiveTab('participants')
+              setSidebarOpen(true)
+            }}
             aria-label="Show participants"
             title="Participants"
           >
-            <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
             <span>{participants.length + 1}</span>
           </button>
+
           <span className="meeting-status">
             {connecting ? 'Connecting…' : 'Meeting room'}
           </span>
@@ -756,6 +953,8 @@ export default function MeetingRoom({
 
               <span className="video-label">
                 You ({displayName})
+                {role === 'Host' ? ' · Host' : ' · Participant'}
+                {handRaised ? ' · ✋ Hand raised' : ''}
                 {muted ? ' · Muted' : ''}
                 {screenSharing ? ' · Sharing screen' : ''}
               </span>
@@ -765,6 +964,7 @@ export default function MeetingRoom({
               <RemoteVideoTile
                 key={participant.socketId}
                 participant={participant}
+                handRaised={raisedHandSocketIds.has(participant.socketId)}
               />
             ))}
 
@@ -788,8 +988,11 @@ export default function MeetingRoom({
             >
               <span aria-hidden="true">▤</span>
               <span>Meeting Transcript &amp; AI Summary</span>
-              <span className="transcript-toggle-chevron">{transcriptOpen ? '−' : '+'}</span>
+              <span className="transcript-toggle-chevron">
+                {transcriptOpen ? '−' : '+'}
+              </span>
             </button>
+
             {transcriptOpen && (
               <div className="transcript-below-content">
                 <LiveTranscript meetingId={roomId} />
@@ -800,9 +1003,25 @@ export default function MeetingRoom({
 
         <aside className="meeting-sidebar" hidden={!sidebarOpen}>
           <div className="meeting-sidebar-drawer-header">
-            <strong>{activeTab === 'participants' ? 'Participants' : activeTab === 'chat' ? 'Meeting chat' : 'Transcript & Summary'}</strong>
-            <button type="button" className="meeting-sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Close side panel" title="Close panel">×</button>
+            <strong>
+              {activeTab === 'participants'
+                ? 'Participants'
+                : activeTab === 'chat'
+                  ? 'Meeting chat'
+                  : 'Transcript & Summary'}
+            </strong>
+
+            <button
+              type="button"
+              className="meeting-sidebar-close"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Close side panel"
+              title="Close panel"
+            >
+              ×
+            </button>
           </div>
+
           <div
             className="meeting-sidebar-tabs"
             role="tablist"
@@ -838,8 +1057,6 @@ export default function MeetingRoom({
             >
               Chat
             </button>
-
-
           </div>
 
           <section
@@ -863,66 +1080,79 @@ export default function MeetingRoom({
                   </div>
 
                   <div className="participant-details">
-                    <strong>You ({displayName})</strong>
-                    <span>Local participant</span>
+                    <strong>
+                      You ({displayName})
+                      {role === 'Host' ? ' · Host' : ''}
+                    </strong>
+                    <span>
+                      {handRaised ? '✋ Hand raised' : role}
+                    </span>
                   </div>
 
                   <div className="participant-status">
-                    <span
-                      title={
-                        muted ? 'Microphone muted' : 'Microphone on'
-                      }
-                    >
+                    <span title={muted ? 'Microphone muted' : 'Microphone on'}>
                       {muted ? '♩̸' : '♩'}
                     </span>
 
-                    <span
-                      title={cameraOff ? 'Camera off' : 'Camera on'}
-                    >
+                    <span title={cameraOff ? 'Camera off' : 'Camera on'}>
                       {cameraOff ? '▣̸' : '▣'}
                     </span>
+
+                    {handRaised && <span title="Hand raised">✋</span>}
                   </div>
                 </div>
 
-                {participants.map((participant) => (
-                  <div
-                    className="meeting-participant"
-                    key={participant.socketId}
-                  >
-                    <div className="participant-avatar">
-                      {participant.displayName
-                        .slice(0, 1)
-                        .toUpperCase()}
-                    </div>
+                {participants.map((participant) => {
+                  const isHandRaised = raisedHandSocketIds.has(
+                    participant.socketId,
+                  )
 
-                    <div className="participant-details">
-                      <strong>{participant.displayName}</strong>
-                      <span>Connected</span>
-                    </div>
+                  return (
+                    <div
+                      className="meeting-participant"
+                      key={participant.socketId}
+                    >
+                      <div className="participant-avatar">
+                        {participant.displayName
+                          .slice(0, 1)
+                          .toUpperCase()}
+                      </div>
 
-                    <div className="participant-status">
-                      <span
-                        title={
-                          participant.audioEnabled
-                            ? 'Microphone on'
-                            : 'Microphone muted'
-                        }
-                      >
-                        {participant.audioEnabled ? '🎙️' : '🔇'}
-                      </span>
+                      <div className="participant-details">
+                        <strong>{participant.displayName}</strong>
+                        <span>
+                          {isHandRaised ? '✋ Hand raised' : 'Connected'}
+                        </span>
+                      </div>
 
-                      <span
-                        title={
-                          participant.cameraEnabled
-                            ? 'Camera on'
-                            : 'Camera off'
-                        }
-                      >
-                        {participant.cameraEnabled ? '📹' : '🚫'}
-                      </span>
+                      <div className="participant-status">
+                        <span
+                          title={
+                            participant.audioEnabled
+                              ? 'Microphone on'
+                              : 'Microphone muted'
+                          }
+                        >
+                          {participant.audioEnabled ? '🎙️' : '🔇'}
+                        </span>
+
+                        <span
+                          title={
+                            participant.cameraEnabled
+                              ? 'Camera on'
+                              : 'Camera off'
+                          }
+                        >
+                          {participant.cameraEnabled ? '📹' : '🚫'}
+                        </span>
+
+                        {isHandRaised && (
+                          <span title="Hand raised">✋</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </section>
           </section>
@@ -1023,7 +1253,6 @@ export default function MeetingRoom({
               </form>
             </section>
           </section>
-
         </aside>
       </div>
 
@@ -1044,7 +1273,10 @@ export default function MeetingRoom({
           }
           disabled={connecting}
         >
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M12 13V7m-3 3 3-3 3 3"/></svg>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg">
+            <rect x="3" y="4" width="18" height="13" rx="2"/>
+            <path d="M8 21h8M12 17v4M12 13V7m-3 3 3-3 3 3"/>
+          </svg>
         </button>
 
         <button
@@ -1060,7 +1292,11 @@ export default function MeetingRoom({
             muted ? 'Unmute microphone' : 'Mute microphone'
           }
         >
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>{muted && <path d="m3 3 18 18"/>}</svg>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg">
+            <rect x="9" y="2" width="6" height="12" rx="3"/>
+            <path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>
+            {muted && <path d="m3 3 18 18"/>}
+          </svg>
         </button>
 
         <button
@@ -1078,8 +1314,42 @@ export default function MeetingRoom({
             cameraOff ? 'Turn camera on' : 'Turn camera off'
           }
         >
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/>{cameraOff && <path d="m3 3 18 18"/>}</svg>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg">
+            <rect x="3" y="6" width="13" height="12" rx="2"/>
+            <path d="m16 10 5-3v10l-5-3"/>
+            {cameraOff && <path d="m3 3 18 18"/>}
+          </svg>
         </button>
+
+        <button
+          type="button"
+          onClick={handRaised ? lowerHand : raiseHand}
+          className={
+            handRaised
+              ? 'meeting-control raise-hand-control active'
+              : 'meeting-control raise-hand-control'
+          }
+          aria-label={handRaised ? 'Lower hand' : 'Raise hand'}
+          title={handRaised ? 'Lower hand' : 'Raise hand'}
+          disabled={connecting}
+        >
+          <span aria-hidden="true">✋</span>
+        </button>
+
+        {role === 'Host' && (
+          <button
+            type="button"
+            onClick={endMeetingForAll}
+            className="meeting-control end-meeting-control"
+            aria-label="End meeting for all"
+            title="End meeting for all"
+            disabled={connecting}
+          >
+
+           <span aria-hidden="true">📞❌</span>
+            <span></span>
+          </button>
+        )}
 
         <button
           type="button"
@@ -1088,7 +1358,9 @@ export default function MeetingRoom({
           aria-label="Leave meeting"
           title="Leave meeting"
         >
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg"><path d="M4 14.5c4.8 4.8 11.2 4.8 16 0l-3-3-3 2a12 12 0 0 1-4 0l-3-2-3 3Z"/></svg>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg">
+            <path d="M4 14.5c4.8 4.8 11.2 4.8 16 0l-3-3-3 2a12 12 0 0 1-4 0l-4-2-3 3Z"/>
+          </svg>
         </button>
       </footer>
 
@@ -1096,13 +1368,20 @@ export default function MeetingRoom({
         type="button"
         className={`floating-chat-button ${sidebarOpen && activeTab === 'chat' ? 'active' : ''}`}
         onClick={() => {
-          if (sidebarOpen && activeTab === 'chat') setSidebarOpen(false)
-          else { setActiveTab('chat'); setSidebarOpen(true) }
+          if (sidebarOpen && activeTab === 'chat') {
+            setSidebarOpen(false)
+          } else {
+            setActiveTab('chat')
+            setSidebarOpen(true)
+          }
         }}
         aria-label="Open chat"
         title="Chat"
       >
-        <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-4-.9L3 21l1.9-5.5a9 9 0 0 1-.9-4A8.5 8.5 0 0 1 12.5 3h.5a8.5 8.5 0 0 1 8 8v.5Z"/><path d="M8 10h8M8 14h6"/></svg>
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="control-svg">
+          <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-4-.9L3 21l1.9-5.5a9 9 0 0 1-.9-4A8.5 8.5 0 0 1 12.5 3h.5a8.5 8.5 0 0 1 8 8v.5Z"/>
+          <path d="M8 10h8M8 14h6"/>
+        </svg>
       </button>
     </main>
   )
@@ -1110,8 +1389,10 @@ export default function MeetingRoom({
 
 function RemoteVideoTile({
   participant,
+  handRaised,
 }: {
   participant: RemoteParticipant
+  handRaised: boolean
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -1136,6 +1417,7 @@ function RemoteVideoTile({
 
       <span className="video-label">
         {participant.displayName}
+        {handRaised ? ' · ✋ Hand raised' : ''}
         {!participant.audioEnabled ? ' · Muted' : ''}
         {!participant.cameraEnabled ? ' · Camera off' : ''}
       </span>
