@@ -1401,3 +1401,153 @@ button:disabled {
   background: #38375f;
   border-color: #aaa8ff;
 }
+
+/* =========================================
+   DASHBOARD CLICKABLE STAT CARDS
+========================================= */
+
+.stat-card-button {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stat-card-button:hover {
+  transform: translateY(-3px);
+}
+
+.stat-card-button:focus-visible {
+  outline: 3px solid var(--accent, #8b5cf6);
+  outline-offset: 4px;
+}
+
+/* =========================================
+   RECENT MEETING SUMMARIES
+========================================= */
+
+.recent-summaries-section {
+  margin-top: 28px;
+  padding: 24px;
+  border-radius: 16px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  color: var(--text-primary, #1f2937);
+}
+
+.recent-summaries-section h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.summary-count {
+  font-size: 13px;
+  color: var(--text-secondary, #6b7280);
+}
+
+.summary-empty-state {
+  margin-top: 18px;
+  padding: 28px 16px;
+  text-align: center;
+  border: 1px dashed var(--border-color, #d1d5db);
+  border-radius: 12px;
+  color: var(--text-secondary, #6b7280);
+}
+
+.summary-empty-icon {
+  font-size: 30px;
+  margin-bottom: 10px;
+}
+
+.recent-summaries-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.recent-summary-card {
+  padding: 18px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 12px;
+  background: var(--panel-bg, #ffffff);
+}
+
+.recent-summary-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.recent-summary-card h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.ai-summary-label {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent, #7c3aed);
+}
+
+.recent-summary-preview {
+  margin: 14px 0;
+  color: var(--text-secondary, #6b7280);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.summary-meta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: var(--text-secondary, #6b7280);
+  font-size: 12px;
+}
+
+.recent-summary-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.recent-summary-actions button {
+  padding: 9px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recent-summary-actions button:focus-visible {
+  outline: 3px solid var(--accent, #8b5cf6);
+  outline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .recent-summaries-section {
+    padding: 16px;
+  }
+
+  .recent-summary-card {
+    padding: 14px;
+  }
+
+  .recent-summary-actions {
+    flex-direction: column;
+  }
+
+  .recent-summary-actions button {
+    width: 100%;
+  }
+}

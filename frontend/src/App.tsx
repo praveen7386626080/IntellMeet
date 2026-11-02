@@ -2,7 +2,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import './App.css'
 import MeetingRoom from './meeting/MeetingRoom'
-import LiveTranscript from './meeting/LiveTranscript'
+import LiveTranscript, {
+  type SavedMeetingSummary,
+} from './meeting/LiveTranscript'
 import { useAuth } from './auth/AuthContext'
 import ProfilePage from './auth/ProfilePage'
 import WorkspacePage, {
@@ -14,6 +16,10 @@ type Meeting = {
   title: string
   date: string
   time: string
+  summary?: string
+  keyDecisions?: string[]
+  actionItems?: string[]
+  summaryGeneratedAt?: string | null
 }
 
 type ApiMeeting = {
@@ -21,6 +27,10 @@ type ApiMeeting = {
   title: string
   date: string
   time: string
+  summary?: string
+  keyDecisions?: string[]
+  actionItems?: string[]
+  summaryGeneratedAt?: string | null
 }
 
 type DashboardAnalytics = {
@@ -33,6 +43,7 @@ type DashboardAnalytics = {
 const API_URL = `${
   import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 }/meetings`
+
 const WORKSPACE_API_URL = `${
   import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 }/workspace`
@@ -91,7 +102,6 @@ function getMeetingIdFromInput(input: string): string | null {
 function App() {
   const { token, user } = useAuth()
 
-  // Theme preference: saved in localStorage.
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const savedTheme = localStorage.getItem('intellmeet-theme')
     return savedTheme === 'dark' ? 'dark' : 'light'
@@ -119,8 +129,9 @@ function App() {
   const [deletingMeetingId, setDeletingMeetingId] =
     useState<string | null>(null)
 
-  // Read the meeting room from the URL during initial state setup.
-  // This avoids calling setState synchronously inside an effect.
+  // Clicking the AI Meeting Notes card opens the summary tab.
+  const [summaryTabRequest, setSummaryTabRequest] = useState(0)
+
   const [activeMeetingRoom, setActiveMeetingRoom] =
     useState<string | null>(() => {
       const params = new URLSearchParams(window.location.search)
@@ -131,9 +142,7 @@ function App() {
         : null
     })
 
-  // Store the current time in state so render calculations stay pure.
   const [currentTime, setCurrentTime] = useState(0)
-
   const nextNoticeId = useRef(0)
 
   const [notice, setNotice] = useState<{
@@ -143,7 +152,6 @@ function App() {
 
   const [errorMessage, setErrorMessage] = useState('')
 
-  // Update the current time outside the render calculation.
   useEffect(() => {
     const initialTimer = window.setTimeout(() => {
       setCurrentTime(Date.now())
@@ -159,7 +167,6 @@ function App() {
     }
   }, [])
 
-  // Automatically dismiss notifications.
   useEffect(() => {
     if (!notice) return
 
@@ -182,7 +189,7 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [errorMessage])
 
-  // Load the signed-in user's meetings saved in MongoDB.
+  // Load meetings, including their saved AI summary fields.
   useEffect(() => {
     const controller = new AbortController()
 
@@ -215,6 +222,10 @@ function App() {
             title: item.title,
             date: item.date,
             time: item.time,
+            summary: item.summary || '',
+            keyDecisions: item.keyDecisions || [],
+            actionItems: item.actionItems || [],
+            summaryGeneratedAt: item.summaryGeneratedAt || null,
           })),
         )
       } catch (error) {
@@ -271,7 +282,6 @@ function App() {
     return () => controller.abort()
   }, [activePage, token])
 
-  // Filter and sort upcoming meetings using state instead of Date.now().
   const upcomingMeetings = meetings
     .filter(
       (meeting) =>
@@ -283,6 +293,25 @@ function App() {
         new Date(`${a.date}T${a.time}`).getTime() -
         new Date(`${b.date}T${b.time}`).getTime(),
     )
+
+  // Only meetings with an actual saved AI summary are displayed.
+  const recentMeetingSummaries = meetings
+    .filter(
+      (meeting) =>
+        typeof meeting.summary === 'string' &&
+        meeting.summary.trim().length > 0,
+    )
+    .sort((a, b) => {
+      const dateA = a.summaryGeneratedAt
+        ? new Date(a.summaryGeneratedAt).getTime()
+        : new Date(`${a.date}T${a.time}`).getTime()
+
+      const dateB = b.summaryGeneratedAt
+        ? new Date(b.summaryGeneratedAt).getTime()
+        : new Date(`${b.date}T${b.time}`).getTime()
+
+      return dateB - dateA
+    })
 
   function showSuccess(message: string) {
     setNotice({
@@ -313,7 +342,68 @@ function App() {
     setShowJoinForm(true)
   }
 
-  // Save a meeting through the Express API.
+  // Download AI summary separately from the transcript.
+  function downloadAISummary(meeting: Meeting) {
+    if (!meeting.summary?.trim()) return
+
+    const decisions = meeting.keyDecisions || []
+    const actions = meeting.actionItems || []
+
+    const generatedDate = meeting.summaryGeneratedAt
+      ? new Date(meeting.summaryGeneratedAt).toLocaleString()
+      : `${formatDate(meeting.date)} · ${meeting.time}`
+
+    const content = [
+      `INTELLMEET - AI MEETING SUMMARY`,
+      `================================`,
+      ``,
+      `Meeting: ${meeting.title}`,
+      `Meeting Date: ${formatDate(meeting.date)}`,
+      `Meeting Time: ${meeting.time}`,
+      `Summary Generated: ${generatedDate}`,
+      ``,
+      `MEETING SUMMARY`,
+      `---------------`,
+      meeting.summary.trim(),
+      ``,
+      `KEY DECISIONS`,
+      `-------------`,
+      ...(decisions.length
+        ? decisions.map((item, index) => `${index + 1}. ${item}`)
+        : ['No key decisions recorded.']),
+      ``,
+      `ACTION ITEMS`,
+      `------------`,
+      ...(actions.length
+        ? actions.map((item, index) => `${index + 1}. ${item}`)
+        : ['No action items recorded.']),
+      ``,
+      `Generated by IntellMeet`,
+    ].join('\n')
+
+    const blob = new Blob([content], {
+      type: 'text/plain;charset=utf-8',
+    })
+
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    const safeTitle = meeting.title
+      .replace(/[^a-z0-9-_ ]/gi, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .toLowerCase()
+
+    link.href = url
+    link.download = `${safeTitle || 'meeting'}-ai-summary.txt`
+
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+
+    URL.revokeObjectURL(url)
+  }
+
   async function createMeeting(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     dismissMessages()
@@ -375,6 +465,10 @@ function App() {
         title: savedMeeting.title,
         date: savedMeeting.date,
         time: savedMeeting.time,
+        summary: savedMeeting.summary || '',
+        keyDecisions: savedMeeting.keyDecisions || [],
+        actionItems: savedMeeting.actionItems || [],
+        summaryGeneratedAt: savedMeeting.summaryGeneratedAt || null,
       }
 
       setMeetings((current) =>
@@ -403,7 +497,6 @@ function App() {
     }
   }
 
-  // Delete a meeting from MongoDB.
   async function deleteMeeting(meeting: Meeting) {
     const confirmed = window.confirm(
       `Are you sure you want to delete "${meeting.title}"? This cannot be undone.`,
@@ -451,7 +544,6 @@ function App() {
     }
   }
 
-  // Open a meeting room from a code, URL, or meeting card.
   function joinMeeting(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     dismissMessages()
@@ -477,7 +569,6 @@ function App() {
     setActiveMeetingRoom(meeting.id)
   }
 
-  // Copy a shareable link to the clipboard.
   async function shareMeeting(meeting: Meeting) {
     dismissMessages()
 
@@ -489,7 +580,6 @@ function App() {
       await navigator.clipboard.writeText(link)
       showSuccess(`Meeting link for "${meeting.title}" copied.`)
     } catch {
-      // Fallback for browsers where clipboard access is unavailable.
       window.prompt('Copy this meeting link:', link)
     }
   }
@@ -505,7 +595,6 @@ function App() {
     )
   }
 
-  // Display the actual video meeting room instead of the dashboard.
   if (activeMeetingRoom) {
     return (
       <MeetingRoom
@@ -660,13 +749,22 @@ function App() {
             </section>
 
             <section className="stats">
-              <article className="stat-card">
+              <button
+                type="button"
+                className="stat-card stat-card-button"
+                onClick={() => setActivePage('Meetings')}
+              >
                 <span>Upcoming Meetings</span>
                 <h2>{upcomingMeetings.length}</h2>
                 <p>Your scheduled conversations</p>
-              </article>
+                <small>View meetings →</small>
+              </button>
 
-              <article className="stat-card">
+              <button
+                type="button"
+                className="stat-card stat-card-button"
+                onClick={() => setActivePage('My Tasks')}
+              >
                 <span>Pending Tasks</span>
                 <h2>
                   {dashboardAnalytics
@@ -675,22 +773,44 @@ function App() {
                     : '—'}
                 </h2>
                 <p>Stay on top of your work</p>
-              </article>
+                <small>View tasks →</small>
+              </button>
 
-              <article className="stat-card">
+              <button
+                type="button"
+                className="stat-card stat-card-button"
+                onClick={() => setActivePage('Projects')}
+              >
                 <span>Active Projects</span>
                 <h2>{dashboardAnalytics?.activeProjectCount ?? '—'}</h2>
                 <p>Your team's projects</p>
-              </article>
+                <small>View projects →</small>
+              </button>
 
-              <article className="stat-card">
+              <button
+                type="button"
+                className="stat-card stat-card-button"
+                onClick={() =>
+                  setSummaryTabRequest((current) => current + 1)
+                }
+              >
                 <span>AI Meeting Notes</span>
                 <h2>{dashboardAnalytics?.summaryCount ?? '—'}</h2>
                 <p>Meeting insights in one place</p>
-              </article>
+                <small>View summaries ↓</small>
+              </button>
             </section>
 
-            <LiveTranscript />
+            <LiveTranscript
+              summaryTabRequest={summaryTabRequest}
+              savedSummaries={
+                recentMeetingSummaries.slice(0, 5) as SavedMeetingSummary[]
+              }
+              loadingSummaries={loadingMeetings}
+              formatDate={formatDate}
+              onOpenSummary={joinScheduledMeeting}
+              onDownloadSummary={downloadAISummary}
+            />
 
             <section className="content-grid">
               <article className="panel">
@@ -858,7 +978,7 @@ function App() {
               page={activePage as WorkspaceSection}
               token={token}
             />
-        )}
+          )}
 
         {activePage === 'Profile' && <ProfilePage />}
       </main>

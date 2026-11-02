@@ -2,9 +2,21 @@
 import type { ReactNode } from 'react'
 import { useAuth } from './AuthContext'
 import AuthPage from './AuthPage'
+import ResetPasswordPage from './ResetPasswordPage'
 
-export default function AuthGate({ children }: { children: ReactNode }) {
-  const { user, loading, signOut } = useAuth()
+export default function AuthGate({
+  children,
+}: {
+  children: ReactNode
+}) {
+  const { user, loading } = useAuth()
+
+  const currentPath = window.location.pathname.replace(/\/+$/, '')
+
+  // Allow password reset links without requiring login.
+  if (currentPath === '/reset-password') {
+    return <ResetPasswordPage />
+  }
 
   if (loading) {
     return (
@@ -18,23 +30,5 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     return <AuthPage />
   }
 
-  return (
-    <>
-      <div className="user-auth-actions">
-        <span className="signed-in-text">
-          Signed in as <strong>{user.name}</strong>
-        </span>
-
-        <button
-          type="button"
-          onClick={signOut}
-          className="logout-button"
-        >
-          Log out
-        </button>
-      </div>
-
-      {children}
-    </>
-  )
+  return <>{children}</>
 }

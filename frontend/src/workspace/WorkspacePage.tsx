@@ -74,13 +74,7 @@ interface Analytics {
 
 const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/workspace`
 
-const pageDescriptions: Record<WorkspaceSection, string> = {
-  Messages: 'Keep your workspace conversations in one shared place.',
-  'My Tasks': 'Organize your work and track progress across projects.',
-  Projects: 'Plan, track, and complete the work that matters.',
-  Team: 'Manage your workspace members and collaborate together.',
-  Analytics: 'See a live overview of your meetings and workspace activity.',
-}
+
 
 const taskStatusLabels: Record<Task['status'], string> = {
   todo: 'To do',
@@ -240,24 +234,7 @@ export default function WorkspacePage({
 
   return (
     <section className="workspace-page">
-      <header className="workspace-page-heading">
-        <div>
-          <p className="workspace-page-kicker">WORKSPACE</p>
-          <h2>{page}</h2>
-          <p>{pageDescriptions[page]}</p>
-        </div>
-        <span className="workspace-page-mark" aria-hidden="true">
-          {page === 'Messages'
-            ? '✉'
-            : page === 'My Tasks'
-              ? '✓'
-              : page === 'Projects'
-                ? '▣'
-                : page === 'Team'
-                  ? '♧'
-                  : '▥'}
-        </span>
-      </header>
+      
 
       {error && (
         <p className="workspace-feedback workspace-feedback-error" role="alert">

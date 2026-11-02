@@ -1,9 +1,27 @@
+
 import { useEffect, useRef, useState } from 'react'
 import './LiveTranscript.css'
 import MeetingSummary from './MeetingSummary'
 
+export interface SavedMeetingSummary {
+  id: string
+  title: string
+  date: string
+  time: string
+  summary?: string
+  keyDecisions?: string[]
+  actionItems?: string[]
+  summaryGeneratedAt?: string | null
+}
+
 interface LiveTranscriptProps {
   meetingId?: string
+  summaryTabRequest?: number
+  savedSummaries?: SavedMeetingSummary[]
+  loadingSummaries?: boolean
+  formatDate?: (date: string) => string
+  onOpenSummary?: (meeting: SavedMeetingSummary) => void
+  onDownloadSummary?: (meeting: SavedMeetingSummary) => void
 }
 
 type SpeechRecognitionAlternative = {
@@ -51,8 +69,17 @@ const TOKEN_KEY = 'intellmeet-access-token'
 
 export default function LiveTranscript({
   meetingId,
+  summaryTabRequest = 0,
+  savedSummaries = [],
+  loadingSummaries = false,
+  formatDate,
+  onOpenSummary,
+  onDownloadSummary,
 }: LiveTranscriptProps) {
-  const [activeView, setActiveView] = useState<'transcript' | 'summary'>('transcript')
+  const [activeView, setActiveView] = useState<'transcript' | 'summary'>(
+    'transcript',
+  )
+
   const [token] = useState(() => localStorage.getItem(TOKEN_KEY))
 
   const [isListening, setIsListening] = useState(false)
@@ -69,6 +96,13 @@ export default function LiveTranscript({
   const shouldListenRef = useRef(false)
   const loadedMeetingIdRef = useRef('')
   const loadingMeetingIdRef = useRef<string | undefined>(meetingId)
+
+  // Open the AI Summary tab when requested from the Dashboard.
+  useEffect(() => {
+    if (summaryTabRequest > 0) {
+      setActiveView('summary')
+    }
+  }, [summaryTabRequest])
 
   // Stop speech recognition when the component unmounts.
   useEffect(() => {
@@ -130,8 +164,6 @@ export default function LiveTranscript({
 
         if (controller.signal.aborted) return
 
-        // Mark the meeting as loaded before updating transcript state.
-        // This prevents autosave from saving stale content.
         loadedMeetingIdRef.current = meetingId
 
         setTranscript(data.transcript)
@@ -225,8 +257,12 @@ export default function LiveTranscript({
   // Keep the newest words in view while the transcript grows.
   useEffect(() => {
     if (!isListening) return
+
     const el = contentRef.current
-    if (el) el.scrollTop = el.scrollHeight
+
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
   }, [transcript, interimText, isListening])
 
   // Start browser-based speech recognition.
@@ -348,7 +384,7 @@ export default function LiveTranscript({
     setSaveStatus('')
   }
 
-  // Download the transcript as a text file.
+  // Download transcript as a separate text file.
   function downloadTranscript() {
     const text = transcript.trim()
 
@@ -396,6 +432,7 @@ export default function LiveTranscript({
           >
             Live Transcript
           </button>
+
           <button
             type="button"
             role="tab"
@@ -466,7 +503,9 @@ export default function LiveTranscript({
           </div>
 
           {loadingTranscript && meetingId && (
-            <p className="transcript-note">Loading saved transcript…</p>
+            <p className="transcript-note">
+              Loading saved transcript…
+            </p>
           )}
 
           {error && (
@@ -485,7 +524,9 @@ export default function LiveTranscript({
                 {transcript && <p>{transcript}</p>}
 
                 {interimText && (
-                  <p className="transcript-interim">{interimText}</p>
+                  <p className="transcript-interim">
+                    {interimText}
+                  </p>
                 )}
               </>
             ) : (
@@ -504,13 +545,107 @@ export default function LiveTranscript({
         </>
       ) : (
         <div className="transcript-view-body">
-          {meetingId ? (
-            <MeetingSummary meetingId={meetingId} transcript={transcript} />
-          ) : (
-            <p className="transcript-empty">
-              Join a meeting to generate and save an AI summary.
+          {meetingId && (
+            <MeetingSummary
+              meetingId={meetingId}
+              transcript={transcript}
+            />
+          )}
+
+          {!meetingId && (
+            <p className="transcript-note">
+              Your saved AI-generated meeting insights appear below.
             </p>
           )}
+
+          <section className="saved-summaries-inside-tab">
+            <div className="panel-heading">
+              <div>
+                <h3>Recent Meeting Summaries</h3>
+                <p>Your saved AI-generated meeting insights</p>
+              </div>
+
+              <span className="summary-count">
+                {savedSummaries.length} saved
+              </span>
+            </div>
+
+            {loadingSummaries ? (
+              <div className="summary-empty-state">
+                Loading meeting summaries...
+              </div>
+            ) : savedSummaries.length === 0 ? (
+              <div className="summary-empty-state">
+                <div className="summary-empty-icon">✦</div>
+                <h3>No AI summaries yet</h3>
+                <p>
+                  Generate an AI summary from a meeting to see it here.
+                </p>
+              </div>
+            ) : (
+              <div className="recent-summaries-list">
+                {savedSummaries.map((meeting) => (
+                  <article
+                    className="recent-summary-card"
+                    key={meeting.id}
+                  >
+                    <div className="recent-summary-top">
+                      <div>
+                        <h4>{meeting.title}</h4>
+                        <p>
+                          {formatDate
+                            ? formatDate(meeting.date)
+                            : meeting.date}
+                          {' · '}
+                          {meeting.time}
+                        </p>
+                      </div>
+
+                      <span className="ai-summary-label">
+                        ✦ AI Summary
+                      </span>
+                    </div>
+
+                    <p className="recent-summary-preview">
+                      {meeting.summary}
+                    </p>
+
+                    <div className="summary-meta">
+                      <span>
+                        {meeting.keyDecisions?.length || 0} key decisions
+                      </span>
+
+                      <span>
+                        {meeting.actionItems?.length || 0} action items
+                      </span>
+                    </div>
+
+                    <div className="recent-summary-actions">
+                      {onOpenSummary && (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => onOpenSummary(meeting)}
+                        >
+                          Open Meeting
+                        </button>
+                      )}
+
+                      {onDownloadSummary && (
+                        <button
+                          type="button"
+                          className="primary-button"
+                          onClick={() => onDownloadSummary(meeting)}
+                        >
+                          ↓ Download AI Summary
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       )}
     </section>

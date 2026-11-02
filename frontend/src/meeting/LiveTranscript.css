@@ -1,14 +1,7 @@
+
 /* =========================================================
    INTELLMEET — LIVE TRANSCRIPT
    LiveTranscript.css
-
-   Layout model (one source of truth):
-   .transcript-panel        flex column, owns its own height
-     ├─ .transcript-topbar      tabs + status       (fixed)
-     ├─ .transcript-controls    action buttons      (fixed)
-     ├─ .transcript-content     the transcript      (scrolls)
-     └─ .transcript-footnote    one-line note       (fixed)
-   Summary view uses .transcript-view-body           (scrolls)
    ========================================================= */
 
 .transcript-panel {
@@ -66,7 +59,7 @@
   flex: 0 0 auto;
 }
 
-/* ---------- TOP BAR: TABS + STATUS ---------- */
+/* ---------- TOP BAR ---------- */
 
 .transcript-topbar {
   display: flex;
@@ -146,7 +139,7 @@
   box-shadow: 0 0 0 4px rgba(69, 189, 131, 0.12);
 }
 
-/* ---------- CONTROLS ---------- */
+/* ---------- TRANSCRIPT CONTROLS ---------- */
 
 .transcript-controls {
   display: flex;
@@ -207,7 +200,6 @@
   color: var(--transcript-primary);
 }
 
-/* Save state sits on the right of the controls row instead of its own line. */
 .transcript-save {
   margin-left: auto;
   color: var(--transcript-muted);
@@ -220,13 +212,13 @@
   color: var(--transcript-danger);
 }
 
-/* ---------- TRANSCRIPT CONTENT (the only scrolling area) ---------- */
+/* ---------- TRANSCRIPT CONTENT ---------- */
 
 .transcript-content {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 140px;
-  max-height: 360px; /* standalone (dashboard) cap; the meeting room lifts it */
+  max-height: 360px;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 14px 16px;
@@ -272,17 +264,187 @@
   background: var(--transcript-border);
 }
 
-/* ---------- SUMMARY VIEW BODY ---------- */
+/* ---------- SUMMARY VIEW ---------- */
 
 .transcript-view-body {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  max-height: 480px; /* standalone cap; the meeting room lifts it */
+  max-height: 480px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--transcript-border) transparent;
+}
+
+/* ---------- SAVED MEETING SUMMARIES INSIDE SUMMARY TAB ---------- */
+
+.saved-summaries-inside-tab {
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid var(--transcript-border);
+  min-width: 0;
+}
+
+.saved-summaries-inside-tab .panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.saved-summaries-inside-tab .panel-heading h3 {
+  margin: 0;
+  color: var(--transcript-text);
+  font-size: 17px;
+  font-weight: 750;
+}
+
+.saved-summaries-inside-tab .panel-heading p {
+  margin: 5px 0 0;
+  color: var(--transcript-muted);
+  font-size: 12px;
+}
+
+.saved-summaries-inside-tab .summary-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 11px;
+  border: 1px solid var(--transcript-border);
+  border-radius: 20px;
+  background: var(--transcript-soft);
+  color: var(--transcript-primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.saved-summaries-inside-tab .summary-empty-state {
+  padding: 28px 18px;
+  border: 1px dashed var(--transcript-border);
+  border-radius: 12px;
+  background: var(--transcript-soft);
+  text-align: center;
+}
+
+.saved-summaries-inside-tab .summary-empty-state h3 {
+  margin: 8px 0;
+  color: var(--transcript-text);
+  font-size: 15px;
+}
+
+.saved-summaries-inside-tab .summary-empty-state p {
+  margin: 0;
+  color: var(--transcript-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.saved-summaries-inside-tab .summary-empty-icon {
+  color: var(--transcript-primary);
+  font-size: 25px;
+}
+
+.saved-summaries-inside-tab .recent-summaries-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.saved-summaries-inside-tab .recent-summary-card {
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid var(--transcript-border);
+  border-radius: 13px;
+  background: var(--transcript-soft);
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.saved-summaries-inside-tab .recent-summary-card:hover {
+  border-color: var(--transcript-primary);
+  transform: translateY(-2px);
+}
+
+.saved-summaries-inside-tab .recent-summary-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.saved-summaries-inside-tab .recent-summary-top h4 {
+  margin: 0;
+  color: var(--transcript-text);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.saved-summaries-inside-tab .recent-summary-top p {
+  margin: 5px 0 0;
+  color: var(--transcript-muted);
+  font-size: 11px;
+}
+
+.saved-summaries-inside-tab .ai-summary-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: 20px;
+  background: var(--transcript-primary-soft);
+  color: var(--transcript-primary);
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.saved-summaries-inside-tab .recent-summary-preview {
+  margin: 15px 0;
+  color: var(--transcript-text);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.saved-summaries-inside-tab .summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.saved-summaries-inside-tab .summary-meta span {
+  padding: 5px 9px;
+  border: 1px solid var(--transcript-border);
+  border-radius: 20px;
+  color: var(--transcript-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.saved-summaries-inside-tab .recent-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.saved-summaries-inside-tab .recent-summary-actions button {
+  min-height: 35px;
+  padding: 8px 13px;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.saved-summaries-inside-tab .recent-summary-actions button:hover {
+  transform: translateY(-1px);
 }
 
 /* ---------- MESSAGES ---------- */
@@ -325,7 +487,6 @@
     flex-wrap: wrap;
   }
 
-  /* Tabs take the full row; each tab gets equal width. */
   .transcript-view-tabs {
     flex: 1 1 100%;
   }
@@ -353,7 +514,17 @@
     margin-left: 0;
     text-align: right;
   }
+
+  .saved-summaries-inside-tab .recent-summary-actions {
+    flex-direction: column;
+  }
+
+  .saved-summaries-inside-tab .recent-summary-actions button {
+    width: 100%;
+  }
 }
+
+/* ---------- ACCESSIBILITY ---------- */
 
 @media (prefers-reduced-motion: reduce) {
   .transcript-panel *,

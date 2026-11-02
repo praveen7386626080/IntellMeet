@@ -3,6 +3,7 @@ import dotenv from 'dotenv'
 import express from 'express'
 import cors from 'cors'
 import mongoose from 'mongoose'
+import jwt, { type JwtPayload } from 'jsonwebtoken'
 import { createServer } from 'node:http'
 import { Server } from 'socket.io'
 
@@ -11,8 +12,13 @@ import authRouter from './routes/auth'
 import transcriptsRouter from './routes/transcripts'
 import workspaceRouter from './routes/workspace'
 import profileRouter from './routes/profile'
+import Meeting from './Models/Meeting'
+
+import passport from 'passport'
+import { configurePassport } from './config/passport'
 
 dotenv.config()
+configurePassport()
 
 const app = express()
 
@@ -21,6 +27,7 @@ const MONGODB_URI = process.env.MONGODB_URI
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173'
 
 app.use(cors({ origin: CLIENT_URL }))
+app.use(passport.initialize())
 
 app.use('/api/auth', express.json({ limit: '10kb' }), authRouter)
 app.use('/api/profile', express.json({ limit: '10kb' }), profileRouter)
@@ -38,7 +45,6 @@ app.use('/api/meetings', express.json({ limit: '4mb' }), meetingsRouter)
 app.use('/api/transcripts', express.json({ limit: '4mb' }), transcriptsRouter)
 app.use('/api/workspace', express.json({ limit: '32kb' }), workspaceRouter)
 
-// Express and Socket.IO share the same HTTP server.
 const httpServer = createServer(app)
 
 const io = new Server(httpServer, {
@@ -64,6 +70,46 @@ interface ChatSendPayload {
   text: string
 }
 
+io.use((socket, next) => {
+  const secret = process.env.JWT_SECRET
+
+  if (!secret) {
+    console.error('JWT_SECRET is not configured.')
+    return next(new Error('Authentication is not configured.'))
+  }
+
+  const authToken = socket.handshake.auth?.token
+
+  if (typeof authToken !== 'string' || !authToken.trim()) {
+    return next(new Error('Authentication required. Please log in.'))
+  }
+
+  const token = authToken.startsWith('Bearer ')
+    ? authToken.slice('Bearer '.length).trim()
+    : authToken.trim()
+
+  try {
+    const decoded = jwt.verify(token, secret, {
+      issuer: 'intellmeet-api',
+      audience: 'intellmeet-web',
+    })
+
+    if (
+      typeof decoded === 'string' ||
+      typeof (decoded as JwtPayload).sub !== 'string'
+    ) {
+      return next(new Error('Invalid authentication token.'))
+    }
+
+    socket.data.userId = (decoded as JwtPayload).sub
+    next()
+  } catch {
+    return next(
+      new Error('Your session is invalid or expired. Please log in again.'),
+    )
+  }
+})
+
 function isValidRoomId(roomId: unknown): roomId is string {
   return (
     typeof roomId === 'string' &&
@@ -82,9 +128,7 @@ function isValidDisplayName(name: unknown): name is string {
 }
 
 function isValidRelayPayload(payload: unknown): payload is RelayPayload {
-  if (typeof payload !== 'object' || payload === null) {
-    return false
-  }
+  if (typeof payload !== 'object' || payload === null) return false
 
   const data = payload as Record<string, unknown>
 
@@ -96,17 +140,16 @@ function isValidRelayPayload(payload: unknown): payload is RelayPayload {
 }
 
 function isValidChatPayload(payload: unknown): payload is ChatSendPayload {
-  if (typeof payload !== 'object' || payload === null) {
-    return false
-  }
+  if (typeof payload !== 'object' || payload === null) return false
 
   const data = payload as Record<string, unknown>
-
   return typeof data.text === 'string'
 }
 
 io.on('connection', (socket) => {
-  console.log(`Meeting socket connected: ${socket.id}`)
+  console.log(
+    `Meeting socket connected: ${socket.id} | User: ${socket.data.userId}`,
+  )
 
   socket.on('room:join', async (payload: JoinRoomPayload) => {
     try {
@@ -123,11 +166,39 @@ io.on('connection', (socket) => {
 
       const roomId = payload.roomId
       const displayName = payload.displayName.trim()
+      const userId = socket.data.userId as string
 
-      // Leave the previous room if this socket joins another one.
+      // Verify that this is an existing scheduled meeting.
+      const meeting = await Meeting.findById(roomId).select('createdBy').lean()
+
+      if (!meeting) {
+        socket.emit('room:error', {
+          message: 'Meeting not found. Please check the Meeting ID.',
+        })
+        return
+      }
+
+      // The meeting creator is the Host. Everyone else is a Participant.
+      const createdBy = meeting.createdBy
+        ? String(meeting.createdBy)
+        : null
+
+      const role = createdBy && createdBy === userId
+        ? 'Host'
+        : 'Participant'
+
       const previousRoomId = socket.data.roomId as string | undefined
 
       if (previousRoomId && previousRoomId !== roomId) {
+        if (socket.data.handRaised) {
+          io.to(previousRoomId).emit('hand:state', {
+            socketId: socket.id,
+            displayName:
+              (socket.data.displayName as string | undefined) ?? 'Participant',
+            raised: false,
+          })
+        }
+
         socket.to(previousRoomId).emit('peer:left', {
           socketId: socket.id,
         })
@@ -143,6 +214,8 @@ io.on('connection', (socket) => {
 
       socket.data.roomId = roomId
       socket.data.displayName = displayName
+      socket.data.role = role
+      socket.data.meetingHostId = createdBy
 
       const peers = existingSocketIds.map((socketId) => {
         const peerSocket = io.sockets.sockets.get(socketId)
@@ -155,25 +228,36 @@ io.on('connection', (socket) => {
         }
       })
 
-      socket.emit('room:joined', { peers })
+      socket.emit('room:joined', {
+        peers,
+        role,
+        hostId: createdBy,
+      })
 
       socket.to(roomId).emit('peer:joined', {
         socketId: socket.id,
         displayName,
       })
 
-      // Send current raised-hand states to the participant who just joined.
-      const handStates = [...(io.sockets.adapter.rooms.get(roomId) ?? [])].map((socketId) => {
+      const handStates = [
+        ...(io.sockets.adapter.rooms.get(roomId) ?? []),
+      ].map((socketId) => {
         const peerSocket = io.sockets.sockets.get(socketId)
+
         return {
           socketId,
-          displayName: (peerSocket?.data.displayName as string | undefined) ?? 'Participant',
+          displayName:
+            (peerSocket?.data.displayName as string | undefined) ??
+            'Participant',
           raised: Boolean(peerSocket?.data.handRaised),
         }
       })
+
       socket.emit('hand:initial-state', handStates)
 
-      console.log(`${displayName} joined meeting room ${roomId}`)
+      console.log(
+        `${displayName} (${role}) joined meeting room ${roomId}`,
+      )
     } catch (error) {
       console.error('Failed to join meeting room:', error)
 
@@ -183,13 +267,70 @@ io.on('connection', (socket) => {
     }
   })
 
+  // Only the verified Host can end the meeting for everyone.
+  socket.on('room:end', async () => {
+    try {
+      const roomId = socket.data.roomId as string | undefined
+      const userId = socket.data.userId as string | undefined
+
+      if (!roomId || !userId) {
+        socket.emit('room:error', {
+          message: 'Join a meeting before ending it.',
+        })
+        return
+      }
+
+      // Verify ownership again from MongoDB; never trust the client role.
+      const meeting = await Meeting.findById(roomId)
+        .select('createdBy')
+        .lean()
+
+      if (!meeting || !meeting.createdBy ||
+          String(meeting.createdBy) !== userId) {
+        socket.emit('room:error', {
+          message: 'Only the meeting Host can end this meeting for everyone.',
+        })
+        return
+      }
+
+      const roomSockets = [
+        ...(io.sockets.adapter.rooms.get(roomId) ?? []),
+      ]
+
+      // Notify everyone before disconnecting their meeting sockets.
+      io.to(roomId).emit('room:ended', {
+        message: 'The Host has ended this meeting for everyone.',
+      })
+
+      for (const socketId of roomSockets) {
+        const participantSocket = io.sockets.sockets.get(socketId)
+
+        if (participantSocket) {
+          delete participantSocket.data.roomId
+          delete participantSocket.data.displayName
+          delete participantSocket.data.role
+          delete participantSocket.data.meetingHostId
+          delete participantSocket.data.handRaised
+
+          await participantSocket.leave(roomId)
+        }
+      }
+
+      console.log(`Host ${userId} ended live meeting room ${roomId}`)
+    } catch (error) {
+      console.error('Failed to end meeting:', error)
+
+      socket.emit('room:error', {
+        message: 'Unable to end the meeting. Please try again.',
+      })
+    }
+  })
+
   function relayToPeer(
     event: 'webrtc:offer' | 'webrtc:answer' | 'webrtc:ice',
     payload: unknown,
   ) {
-    if (!isValidRelayPayload(payload)) {
-      return
-    }
+    if (!isValidRelayPayload(payload)) return
 
     const roomId = socket.data.roomId as string | undefined
 
@@ -202,7 +343,6 @@ io.on('connection', (socket) => {
 
     const target = io.sockets.sockets.get(payload.to)
 
-    // Only relay messages to another connected participant in this room.
     if (
       !target ||
       !target.rooms.has(roomId) ||
@@ -237,39 +377,77 @@ io.on('connection', (socket) => {
     relayToPeer('webrtc:ice', payload)
   })
 
-  // Real-time raise-hand support. The server derives participant identity
-  // from this socket and never trusts a client-supplied socket ID or room ID.
+  // Raise Hand.
   socket.on('hand:raise', (payload: unknown) => {
     const roomId = socket.data.roomId as string | undefined
     const displayName = socket.data.displayName as string | undefined
+
     if (!roomId || !displayName) {
-      socket.emit('room:error', { message: 'Join a meeting before raising your hand.' })
+      socket.emit('room:error', {
+        message: 'Join a meeting before raising your hand.',
+      })
       return
     }
-    if (payload !== undefined && (!payload || typeof payload !== 'object' || (payload as Record<string, unknown>).roomId !== roomId)) {
-      socket.emit('room:error', { message: 'Invalid raise-hand request.' })
+
+    if (
+      payload !== undefined &&
+      (
+        !payload ||
+        typeof payload !== 'object' ||
+        (payload as Record<string, unknown>).roomId !== roomId
+      )
+    ) {
+      socket.emit('room:error', {
+        message: 'Invalid raise-hand request.',
+      })
       return
     }
+
     socket.data.handRaised = true
-    io.to(roomId).emit('hand:state', { socketId: socket.id, displayName, raised: true })
+
+    io.to(roomId).emit('hand:state', {
+      socketId: socket.id,
+      displayName,
+      raised: true,
+    })
   })
 
+  // Lower Hand.
   socket.on('hand:lower', (payload: unknown) => {
     const roomId = socket.data.roomId as string | undefined
     const displayName = socket.data.displayName as string | undefined
+
     if (!roomId || !displayName) {
-      socket.emit('room:error', { message: 'Join a meeting before lowering your hand.' })
+      socket.emit('room:error', {
+        message: 'Join a meeting before lowering your hand.',
+      })
       return
     }
-    if (payload !== undefined && (!payload || typeof payload !== 'object' || (payload as Record<string, unknown>).roomId !== roomId)) {
-      socket.emit('room:error', { message: 'Invalid lower-hand request.' })
+
+    if (
+      payload !== undefined &&
+      (
+        !payload ||
+        typeof payload !== 'object' ||
+        (payload as Record<string, unknown>).roomId !== roomId
+      )
+    ) {
+      socket.emit('room:error', {
+        message: 'Invalid lower-hand request.',
+      })
       return
     }
+
     socket.data.handRaised = false
-    io.to(roomId).emit('hand:state', { socketId: socket.id, displayName, raised: false })
+
+    io.to(roomId).emit('hand:state', {
+      socketId: socket.id,
+      displayName,
+      raised: false,
+    })
   })
 
-  // Real-time meeting chat.
+  // Meeting chat.
   socket.on('chat:send', (payload: unknown) => {
     const roomId = socket.data.roomId as string | undefined
     const senderName = socket.data.displayName as string | undefined
@@ -297,7 +475,6 @@ io.on('connection', (socket) => {
       return
     }
 
-    // The sender name comes from room:join, not from the client message.
     io.to(roomId).emit('chat:message', {
       id: `${socket.id}-${Date.now()}`,
       senderName,
@@ -306,16 +483,12 @@ io.on('connection', (socket) => {
     })
   })
 
+  // Participant microphone and camera state.
   socket.on('participant:media-state', (payload: unknown) => {
     const roomId = socket.data.roomId as string | undefined
 
-    if (!roomId) {
-      return
-    }
-
-    if (typeof payload !== 'object' || payload === null) {
-      return
-    }
+    if (!roomId) return
+    if (typeof payload !== 'object' || payload === null) return
 
     const data = payload as Record<string, unknown>
 
@@ -333,34 +506,38 @@ io.on('connection', (socket) => {
     })
   })
 
+  // Leave Meeting.
   socket.on('room:leave', async (payload?: { roomId?: string }) => {
     const currentRoomId = socket.data.roomId as string | undefined
 
     if (!currentRoomId) return
 
-    // A client cannot make this socket leave an unrelated room.
-    if (payload?.roomId && payload.roomId !== currentRoomId) {
-      return
-    }
+    if (payload?.roomId && payload.roomId !== currentRoomId) return
 
     if (socket.data.handRaised) {
       io.to(currentRoomId).emit('hand:state', {
         socketId: socket.id,
-        displayName: (socket.data.displayName as string | undefined) ?? 'Participant',
+        displayName:
+          (socket.data.displayName as string | undefined) ?? 'Participant',
         raised: false,
       })
     }
+
     socket.to(currentRoomId).emit('peer:left', {
       socketId: socket.id,
     })
 
     await socket.leave(currentRoomId)
-    delete socket.data.handRaised
 
+    delete socket.data.handRaised
     delete socket.data.roomId
     delete socket.data.displayName
+    delete socket.data.role
+    delete socket.data.meetingHostId
 
-    console.log(`Socket ${socket.id} left meeting room ${currentRoomId}`)
+    console.log(
+      `Socket ${socket.id} left meeting room ${currentRoomId}`,
+    )
   })
 
   socket.on('disconnect', () => {
@@ -370,10 +547,12 @@ io.on('connection', (socket) => {
       if (socket.data.handRaised) {
         io.to(roomId).emit('hand:state', {
           socketId: socket.id,
-          displayName: (socket.data.displayName as string | undefined) ?? 'Participant',
+          displayName:
+            (socket.data.displayName as string | undefined) ?? 'Participant',
           raised: false,
         })
       }
+
       socket.to(roomId).emit('peer:left', {
         socketId: socket.id,
       })
@@ -395,6 +574,11 @@ async function startServer() {
     process.exit(1)
   }
 
+  if (!process.env.JWT_SECRET) {
+    console.error('Please configure JWT_SECRET in backend/.env')
+    process.exit(1)
+  }
+
   try {
     await mongoose.connect(MONGODB_URI, {
       serverSelectionTimeoutMS: 10000,
@@ -407,6 +591,8 @@ async function startServer() {
       console.log('Socket.IO meeting signaling server is ready.')
       console.log('Real-time meeting chat is ready.')
       console.log('Real-time raise-hand support is ready.')
+      console.log('Socket.IO JWT authentication is enabled.')
+      console.log('Host-only End Meeting support is ready.')
     })
   } catch (error) {
     console.error('Could not connect to MongoDB:', error)
