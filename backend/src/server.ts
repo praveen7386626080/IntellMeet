@@ -586,14 +586,14 @@ async function startServer() {
 
     console.log('MongoDB connected successfully.')
 
-    httpServer.listen(PORT, () => {
-      console.log(`IntellMeet API running at http://localhost:${PORT}`)
-      console.log('Socket.IO meeting signaling server is ready.')
-      console.log('Real-time meeting chat is ready.')
-      console.log('Real-time raise-hand support is ready.')
-      console.log('Socket.IO JWT authentication is enabled.')
-      console.log('Host-only End Meeting support is ready.')
-    })
+    httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`IntellMeet API running on port ${PORT}`)
+  console.log('Socket.IO meeting signaling server is ready.')
+  console.log('Real-time meeting chat is ready.')
+  console.log('Real-time raise-hand support is ready.')
+  console.log('Socket.IO JWT authentication is enabled.')
+  console.log('Host-only End Meeting support is ready.')
+})
   } catch (error) {
     console.error('Could not connect to MongoDB:', error)
     process.exit(1)
