@@ -12,6 +12,8 @@ const API_URL = `${
   import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 }/auth`
 
+const TOKEN_KEY = 'intellmeet-access-token'
+
 export type AuthUser = {
   id: string
   name: string
@@ -45,11 +47,10 @@ type AuthContextValue = {
     token: string,
     password: string,
   ) => Promise<string>
+  completeOAuth: (oauthToken: string) => Promise<void>
   signOut: () => void
   clearError: () => void
 }
-
-const TOKEN_KEY = 'intellmeet-access-token'
 
 const AuthContext = createContext<AuthContextValue | undefined>(
   undefined,
@@ -57,7 +58,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(
 
 async function readError(response: Response): Promise<string> {
   try {
-    const body = (await response.json()) as { message?: string }
+    const body = (await response.json()) as MessageResponse
 
     return (
       body.message ||
@@ -82,7 +83,7 @@ export function AuthProvider({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // Sign out without affecting other application features.
+  // Sign out.
   const signOut = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY)
     setToken(null)
@@ -115,6 +116,10 @@ export function AuthProvider({
 
         const body = (await response.json()) as {
           user: AuthUser
+        }
+
+        if (!body.user) {
+          throw new Error('Invalid user response.')
         }
 
         if (!cancelled) {
@@ -178,7 +183,7 @@ export function AuthProvider({
     [],
   )
 
-  // Login.
+  // Email and password login.
   const signIn = useCallback(
     async (email: string, password: string) => {
       try {
@@ -199,7 +204,7 @@ export function AuthProvider({
     [authenticate],
   )
 
-  // Registration.
+  // Email and password registration.
   const signUp = useCallback(
     async (
       name: string,
@@ -223,6 +228,56 @@ export function AuthProvider({
       }
     },
     [authenticate],
+  )
+
+  // Complete Google or GitHub authentication.
+  // The backend returns a short-lived JWT in the URL fragment.
+  // Verify it against /me before saving it.
+  const completeOAuth = useCallback(
+    async (oauthToken: string) => {
+      setError('')
+
+      if (!oauthToken || oauthToken.length > 4096) {
+        throw new Error('Invalid social login token.')
+      }
+
+      try {
+        const response = await fetch(`${API_URL}/me`, {
+          headers: {
+            Authorization: `Bearer ${oauthToken}`,
+          },
+        })
+
+        if (!response.ok) {
+          throw new Error(
+            await readError(response),
+          )
+        }
+
+        const body = (await response.json()) as {
+          user?: AuthUser
+        }
+
+        if (!body.user) {
+          throw new Error(
+            'The server returned an invalid user response.',
+          )
+        }
+
+        localStorage.setItem(TOKEN_KEY, oauthToken)
+        setUser(body.user)
+        setToken(oauthToken)
+      } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Social login failed. Please try again.'
+
+        setError(message)
+        throw new Error(message)
+      }
+    },
+    [],
   )
 
   // Request a password reset email.
@@ -268,7 +323,7 @@ export function AuthProvider({
     [],
   )
 
-  // Submit the new password using the reset token.
+  // Reset the password.
   const resetPassword = useCallback(
     async (
       resetToken: string,
@@ -331,6 +386,7 @@ export function AuthProvider({
         signUp,
         forgotPassword,
         resetPassword,
+        completeOAuth,
         signOut,
         clearError,
       }}

@@ -87,12 +87,16 @@ export default function AuthPage() {
       setSubmitting(false)
     }
   }
+const AUTH_API_URL = `${
+  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+}/auth`
 
-  function handleSocialLogin(provider: 'Google' | 'GitHub') {
-    setSocialMessage(
-      `${provider} sign-in will be available after backend OAuth integration.`,
-    )
-  }
+function handleSocialLogin(provider: 'google' | 'github') {
+  setSocialMessage('')
+  clearError()
+
+  window.location.assign(`${AUTH_API_URL}/${provider}`)
+}
 
   return (
     <main className="auth-page">
@@ -157,13 +161,13 @@ export default function AuthPage() {
         </div>
 
         {/* Social login */}
-        {mode === 'login' && !showForgotPanel && (
+        {!showForgotPanel && (
           <>
             <div className="auth-social-buttons">
               <button
                 type="button"
                 className="auth-social-button"
-                onClick={() => handleSocialLogin('Google')}
+                onClick={() => handleSocialLogin('google')}
               >
                 <span className="social-google" aria-hidden="true">
                   G
@@ -174,7 +178,7 @@ export default function AuthPage() {
               <button
                 type="button"
                 className="auth-social-button"
-                onClick={() => handleSocialLogin('GitHub')}
+                onClick={() => handleSocialLogin('github')}
               >
                 <span className="social-github" aria-hidden="true">
                   ⌘
