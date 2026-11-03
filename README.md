@@ -161,3 +161,16 @@ GitHub: https://github.com/praveen7386626080/IntellMeet
 ---
 
 **IntellMeet – Meet Smarter. Work Better.**
+## Application Screenshots
+
+### Login Page
+![IntellMeet Login](screenshots/login.png)
+
+### Dashboard
+![IntellMeet Dashboard](screenshots/dashboard.png)
+
+### User Profile
+![IntellMeet Profile](screenshots/profile.png)
+
+### Live Meeting Room
+![IntellMeet Meeting Room](screenshots/meeting.png)
