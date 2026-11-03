@@ -10,3 +10,5 @@ coverage/
 
 # Local editor settings
 .vscode/
+# Local backup archive
+backend.zip
