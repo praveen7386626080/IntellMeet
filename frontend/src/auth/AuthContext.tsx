@@ -1,25 +1,20 @@
 
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useState,
   type ReactNode,
 } from 'react'
+import {
+  AuthContext,
+  type AuthUser,
+} from './auth-context'
 
 const API_URL = `${
   import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 }/auth`
 
 const TOKEN_KEY = 'intellmeet-access-token'
-
-export type AuthUser = {
-  id: string
-  name: string
-  email: string
-  role: string
-}
 
 type AuthResponse = {
   message?: string
@@ -30,31 +25,6 @@ type AuthResponse = {
 type MessageResponse = {
   message?: string
 }
-
-type AuthContextValue = {
-  user: AuthUser | null
-  token: string | null
-  loading: boolean
-  error: string
-  signIn: (email: string, password: string) => Promise<void>
-  signUp: (
-    name: string,
-    email: string,
-    password: string,
-  ) => Promise<void>
-  forgotPassword: (email: string) => Promise<string>
-  resetPassword: (
-    token: string,
-    password: string,
-  ) => Promise<string>
-  completeOAuth: (oauthToken: string) => Promise<void>
-  signOut: () => void
-  clearError: () => void
-}
-
-const AuthContext = createContext<AuthContextValue | undefined>(
-  undefined,
-)
 
 async function readError(response: Response): Promise<string> {
   try {
@@ -230,56 +200,6 @@ export function AuthProvider({
     [authenticate],
   )
 
-  // Complete Google or GitHub authentication.
-  // The backend returns a short-lived JWT in the URL fragment.
-  // Verify it against /me before saving it.
-  const completeOAuth = useCallback(
-    async (oauthToken: string) => {
-      setError('')
-
-      if (!oauthToken || oauthToken.length > 4096) {
-        throw new Error('Invalid social login token.')
-      }
-
-      try {
-        const response = await fetch(`${API_URL}/me`, {
-          headers: {
-            Authorization: `Bearer ${oauthToken}`,
-          },
-        })
-
-        if (!response.ok) {
-          throw new Error(
-            await readError(response),
-          )
-        }
-
-        const body = (await response.json()) as {
-          user?: AuthUser
-        }
-
-        if (!body.user) {
-          throw new Error(
-            'The server returned an invalid user response.',
-          )
-        }
-
-        localStorage.setItem(TOKEN_KEY, oauthToken)
-        setUser(body.user)
-        setToken(oauthToken)
-      } catch (err) {
-        const message =
-          err instanceof Error
-            ? err.message
-            : 'Social login failed. Please try again.'
-
-        setError(message)
-        throw new Error(message)
-      }
-    },
-    [],
-  )
-
   // Request a password reset email.
   const forgotPassword = useCallback(
     async (email: string): Promise<string> => {
@@ -386,7 +306,6 @@ export function AuthProvider({
         signUp,
         forgotPassword,
         resetPassword,
-        completeOAuth,
         signOut,
         clearError,
       }}
@@ -394,17 +313,4 @@ export function AuthProvider({
       {children}
     </AuthContext.Provider>
   )
-}
-
-// Custom authentication hook.
-export function useAuth() {
-  const context = useContext(AuthContext)
-
-  if (!context) {
-    throw new Error(
-      'useAuth must be used inside AuthProvider.',
-    )
-  }
-
-  return context
 }

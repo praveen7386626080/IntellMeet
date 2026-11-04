@@ -19,22 +19,9 @@ const userSchema = new Schema(
       maxlength: 254,
     },
 
-    // Password is optional for OAuth-only accounts.
-    // Existing email/password registrations still create a passwordHash.
     passwordHash: {
       type: String,
       select: false,
-    },
-
-    googleId: {
-      type: String,
-      unique: true,
-      sparse: true,
-    },
-    githubId: {
-      type: String,
-      unique: true,
-      sparse: true,
     },
 
     // Password reset

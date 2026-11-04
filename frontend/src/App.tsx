@@ -5,7 +5,7 @@ import MeetingRoom from './meeting/MeetingRoom'
 import LiveTranscript, {
   type SavedMeetingSummary,
 } from './meeting/LiveTranscript'
-import { useAuth } from './auth/AuthContext'
+import { useAuth } from './auth/useAuth'
 import ProfilePage from './auth/ProfilePage'
 import WorkspacePage, {
   type WorkspaceSection,

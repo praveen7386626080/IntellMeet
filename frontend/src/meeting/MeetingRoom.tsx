@@ -9,7 +9,7 @@ import type { Socket } from 'socket.io-client'
 import { createMeetingSocket } from './meetingSocket'
 import './MeetingRoom.css'
 import LiveTranscript from './LiveTranscript'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 
 interface MeetingRoomProps {
   roomId: string
@@ -1466,4 +1466,3 @@ function RemoteVideoTile({
     </article>
   )
 }
-

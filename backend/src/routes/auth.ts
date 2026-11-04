@@ -3,12 +3,10 @@ import {
   Router,
   type Request,
   type Response,
-  type NextFunction,
 } from 'express'
 
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
-import passport from 'passport'
 import { createHash, randomBytes } from 'node:crypto'
 
 import User from '../Models/User'
@@ -17,10 +15,6 @@ import {
   requireAuth,
   type AuthenticatedRequest,
 } from '../middleware/requireAuth'
-
-import {
-  isOAuthConfigured,
-} from '../config/passport'
 
 import {
   sendPasswordResetEmail,
@@ -204,7 +198,6 @@ router.post('/login', async (req: Request, res: Response) => {
       email: email.trim().toLowerCase(),
     }).select('+passwordHash')
 
-    // OAuth-only accounts do not have a password hash.
     if (
       !user ||
       !user.passwordHash ||
@@ -263,105 +256,6 @@ router.get(
 )
 
 // --------------------------------------------------
-// GOOGLE OAUTH
-// GET /api/auth/google
-// --------------------------------------------------
-
-router.get(
-  '/google',
-  (req: Request, res: Response, next: NextFunction) => {
-    if (!isOAuthConfigured('google')) {
-      res.status(503).json({
-        message: 'Google login is not configured.',
-      })
-      return
-    }
-
-    passport.authenticate('google', {
-      scope: ['profile', 'email'],
-      session: false,
-    })(req, res, next)
-  },
-)
-
-// GOOGLE CALLBACK
-// GET /api/auth/google/callback
-
-function createOAuthCallback(provider: 'google' | 'github') {
-  return (
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ) => {
-    passport.authenticate(
-      provider,
-      { session: false },
-      (
-        error: Error | null,
-        user: Express.User | false | null,
-      ) => {
-        if (error || !user) {
-          const message =
-            error?.message || 'Social login failed. Please try again.'
-
-          res.redirect(
-            `${getClientUrl()}/?oauthError=${encodeURIComponent(message)}`,
-          )
-          return
-        }
-
-        const authenticatedUser = user as unknown as {
-          _id: unknown
-        }
-
-        const token = createToken(
-          String(authenticatedUser._id),
-        )
-
-        res.redirect(
-          `${getClientUrl()}/auth/callback#token=${encodeURIComponent(token)}`,
-        )
-      },
-    )(req, res, next)
-  }
-}
-
-router.get(
-  '/google/callback',
-  createOAuthCallback('google'),
-)
-
-// --------------------------------------------------
-// GITHUB OAUTH
-// GET /api/auth/github
-// --------------------------------------------------
-
-router.get(
-  '/github',
-  (req: Request, res: Response, next: NextFunction) => {
-    if (!isOAuthConfigured('github')) {
-      res.status(503).json({
-        message: 'GitHub login is not configured.',
-      })
-      return
-    }
-
-    passport.authenticate('github', {
-      scope: ['user:email'],
-      session: false,
-    })(req, res, next)
-  },
-)
-
-// GITHUB CALLBACK
-// GET /api/auth/github/callback
-
-router.get(
-  '/github/callback',
-  createOAuthCallback('github'),
-)
-
-// --------------------------------------------------
 // FORGOT PASSWORD
 // POST /api/auth/forgot-password
 // --------------------------------------------------
@@ -393,7 +287,6 @@ router.post(
         email: cleanEmail,
       }).select('+passwordHash')
 
-      // Do not issue password resets for OAuth-only accounts.
       if (!user || !user.passwordHash) {
         res.status(200).json({
           message: genericMessage,

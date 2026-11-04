@@ -524,13 +524,12 @@ router.patch(
         return
       }
 
-      // OAuth-only accounts do not have a local password.
       const storedPasswordHash = user.passwordHash
 
       if (!storedPasswordHash) {
         res.status(400).json({
           message:
-            'This account does not have a password. Please use your social login provider.',
+            'This account does not have a password set.',
         })
         return
       }
@@ -600,13 +599,12 @@ router.post(
         return
       }
 
-      // OAuth-only accounts cannot use password confirmation.
       const storedPasswordHash = user.passwordHash
 
       if (!storedPasswordHash) {
         res.status(400).json({
           message:
-            'This account does not have a local password. Account deletion through social-account reauthentication is not currently supported.',
+            'This account does not have a password set and cannot be reauthenticated for deletion.',
         })
         return
       }

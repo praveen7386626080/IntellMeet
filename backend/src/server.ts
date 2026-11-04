@@ -14,11 +14,7 @@ import workspaceRouter from './routes/workspace'
 import profileRouter from './routes/profile'
 import Meeting from './Models/Meeting'
 
-import passport from 'passport'
-import { configurePassport } from './config/passport'
-
 dotenv.config()
-configurePassport()
 
 const app = express()
 
@@ -50,7 +46,6 @@ const corsOptions = {
 }
 
 app.use(cors(corsOptions))
-app.use(passport.initialize())
 
 app.use('/api/auth', express.json({ limit: '10kb' }), authRouter)
 app.use('/api/profile', express.json({ limit: '10kb' }), profileRouter)

@@ -76,9 +76,17 @@ export default function LiveTranscript({
   onOpenSummary,
   onDownloadSummary,
 }: LiveTranscriptProps) {
-  const [activeView, setActiveView] = useState<'transcript' | 'summary'>(
+  const [selectedView, setSelectedView] = useState<'transcript' | 'summary'>(
     'transcript',
   )
+  const [
+    handledSummaryTabRequest,
+    setHandledSummaryTabRequest,
+  ] = useState(0)
+  const activeView =
+    summaryTabRequest > handledSummaryTabRequest
+      ? 'summary'
+      : selectedView
 
   const [token] = useState(() => localStorage.getItem(TOKEN_KEY))
 
@@ -97,12 +105,10 @@ export default function LiveTranscript({
   const loadedMeetingIdRef = useRef('')
   const loadingMeetingIdRef = useRef<string | undefined>(meetingId)
 
-  // Open the AI Summary tab when requested from the Dashboard.
-  useEffect(() => {
-    if (summaryTabRequest > 0) {
-      setActiveView('summary')
-    }
-  }, [summaryTabRequest])
+  function selectView(view: 'transcript' | 'summary') {
+    setSelectedView(view)
+    setHandledSummaryTabRequest(summaryTabRequest)
+  }
 
   // Stop speech recognition when the component unmounts.
   useEffect(() => {
@@ -428,7 +434,7 @@ export default function LiveTranscript({
             role="tab"
             aria-selected={activeView === 'transcript'}
             className={activeView === 'transcript' ? 'active' : ''}
-            onClick={() => setActiveView('transcript')}
+            onClick={() => selectView('transcript')}
           >
             Live Transcript
           </button>
@@ -438,7 +444,7 @@ export default function LiveTranscript({
             role="tab"
             aria-selected={activeView === 'summary'}
             className={activeView === 'summary' ? 'active' : ''}
-            onClick={() => setActiveView('summary')}
+            onClick={() => selectView('summary')}
           >
             AI Summary &amp; Action Items
           </button>

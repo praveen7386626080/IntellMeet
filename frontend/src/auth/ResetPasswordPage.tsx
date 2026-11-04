@@ -1,6 +1,6 @@
 
 import { useState, type FormEvent } from 'react'
-import { useAuth } from './AuthContext'
+import { useAuth } from './useAuth'
 import './Auth.css'
 
 export default function ResetPasswordPage() {
