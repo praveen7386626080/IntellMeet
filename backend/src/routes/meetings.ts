@@ -14,8 +14,48 @@ interface MeetingSummary {
   actionItems: string[]
 }
 
+const MAX_SUMMARY_LENGTH = 2000
+const MAX_LIST_ITEMS = 8
+const MAX_LIST_ITEM_LENGTH = 250
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizeSummaryList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const seen = new Set<string>()
+  const normalized: string[] = []
+
+  for (const item of value) {
+    if (typeof item !== 'string') {
+      continue
+    }
+
+    const trimmed = item.trim()
+
+    if (!trimmed || trimmed.length > MAX_LIST_ITEM_LENGTH) {
+      continue
+    }
+
+    const key = trimmed.toLowerCase()
+
+    if (seen.has(key)) {
+      continue
+    }
+
+    seen.add(key)
+    normalized.push(trimmed)
+
+    if (normalized.length >= MAX_LIST_ITEMS) {
+      break
+    }
+  }
+
+  return normalized
 }
 
 function validateSummary(value: unknown): MeetingSummary | null {
@@ -23,26 +63,14 @@ function validateSummary(value: unknown): MeetingSummary | null {
     return null
   }
 
-  const keyDecisions = Array.isArray(value.keyDecisions)
-    ? value.keyDecisions
-    : []
-
-  const actionItems = Array.isArray(value.actionItems)
-    ? value.actionItems
-    : []
-
-  if (
-    !keyDecisions.every((item) => typeof item === 'string') ||
-    !actionItems.every((item) => typeof item === 'string')
-  ) {
-    return null
-  }
-
   const summary = value.summary.trim()
 
-  if (!summary) {
+  if (!summary || summary.length > MAX_SUMMARY_LENGTH) {
     return null
   }
+
+  const keyDecisions = normalizeSummaryList(value.keyDecisions)
+  const actionItems = normalizeSummaryList(value.actionItems)
 
   return {
     summary,
