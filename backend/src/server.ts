@@ -24,9 +24,20 @@ const app = express()
 
 const PORT = Number(process.env.PORT) || 5000
 const MONGODB_URI = process.env.MONGODB_URI
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173'
 
-app.use(cors({ origin: CLIENT_URL }))
+// Support multiple frontend URLs through CLIENT_URLS.
+const CLIENT_URLS = (
+  process.env.CLIENT_URLS ||
+  process.env.CLIENT_URL ||
+  'http://localhost:5173'
+)
+  .split(',')
+  .map((url) => url.trim())
+  .filter(Boolean)
+
+// Express CORS configuration.
+app.use(cors({ origin: CLIENT_URLS }))
+
 app.use(passport.initialize())
 
 app.use('/api/auth', express.json({ limit: '10kb' }), authRouter)
@@ -47,9 +58,10 @@ app.use('/api/workspace', express.json({ limit: '32kb' }), workspaceRouter)
 
 const httpServer = createServer(app)
 
+// Socket.IO CORS configuration.
 const io = new Server(httpServer, {
   cors: {
-    origin: CLIENT_URL,
+    origin: CLIENT_URLS,
     methods: ['GET', 'POST'],
   },
 })
@@ -285,8 +297,11 @@ io.on('connection', (socket) => {
         .select('createdBy')
         .lean()
 
-      if (!meeting || !meeting.createdBy ||
-          String(meeting.createdBy) !== userId) {
+      if (
+        !meeting ||
+        !meeting.createdBy ||
+        String(meeting.createdBy) !== userId
+      ) {
         socket.emit('room:error', {
           message: 'Only the meeting Host can end this meeting for everyone.',
         })
@@ -587,13 +602,13 @@ async function startServer() {
     console.log('MongoDB connected successfully.')
 
     httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`IntellMeet API running on port ${PORT}`)
-  console.log('Socket.IO meeting signaling server is ready.')
-  console.log('Real-time meeting chat is ready.')
-  console.log('Real-time raise-hand support is ready.')
-  console.log('Socket.IO JWT authentication is enabled.')
-  console.log('Host-only End Meeting support is ready.')
-})
+      console.log(`IntellMeet API running on port ${PORT}`)
+      console.log('Socket.IO meeting signaling server is ready.')
+      console.log('Real-time meeting chat is ready.')
+      console.log('Real-time raise-hand support is ready.')
+      console.log('Socket.IO JWT authentication is enabled.')
+      console.log('Host-only End Meeting support is ready.')
+    })
   } catch (error) {
     console.error('Could not connect to MongoDB:', error)
     process.exit(1)
