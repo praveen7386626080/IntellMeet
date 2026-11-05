@@ -295,9 +295,12 @@ export default function MeetingRoom({
           video: true,
         })
 
-        // Keep the new audio track consistent with the current mute state.
+        // Apply current controls because they may have changed while media permission was pending.
         stream.getAudioTracks().forEach((track) => {
           track.enabled = !mutedRef.current
+        })
+        stream.getVideoTracks().forEach((track) => {
+          track.enabled = !cameraOffRef.current
         })
 
         if (cancelled) {
@@ -330,6 +333,8 @@ export default function MeetingRoom({
             currentStream.getTracks().forEach((track) => {
               if (track.kind === 'audio') {
                 track.enabled = !mutedRef.current
+              } else if (track.kind === 'video') {
+                track.enabled = !cameraOffRef.current
               }
 
               const sender = pc.addTrack(track, currentStream)
@@ -766,7 +771,7 @@ export default function MeetingRoom({
     const videoTracks =
       localStreamRef.current?.getVideoTracks() ?? []
 
-    const nextCameraOff = !cameraOff
+    const nextCameraOff = !cameraOffRef.current
 
     videoTracks.forEach((track) => {
       track.enabled = !nextCameraOff
@@ -1466,4 +1471,3 @@ function RemoteVideoTile({
     </article>
   )
 }
-
