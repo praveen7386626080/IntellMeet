@@ -12,7 +12,6 @@ export default function AuthPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showForgotPanel, setShowForgotPanel] = useState(false)
   const [resetMessage, setResetMessage] = useState('')
-  const [socialMessage, setSocialMessage] = useState('')
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() =>
     document.documentElement.getAttribute('data-theme') === 'dark'
@@ -44,7 +43,6 @@ export default function AuthPage() {
     setShowPassword(false)
     setShowForgotPanel(false)
     setResetMessage('')
-    setSocialMessage('')
     clearError()
   }
 
@@ -87,17 +85,6 @@ export default function AuthPage() {
       setSubmitting(false)
     }
   }
-const AUTH_API_URL = `${
-  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
-}/auth`
-
-function handleSocialLogin(provider: 'google' | 'github') {
-  setSocialMessage('')
-  clearError()
-
-  window.location.assign(`${AUTH_API_URL}/${provider}`)
-}
-
   return (
     <main className="auth-page">
       <section className="auth-card">
@@ -159,45 +146,6 @@ function handleSocialLogin(provider: 'google' | 'github') {
             Register
           </button>
         </div>
-
-        {/* Social login */}
-        {!showForgotPanel && (
-          <>
-            <div className="auth-social-buttons">
-              <button
-                type="button"
-                className="auth-social-button"
-                onClick={() => handleSocialLogin('google')}
-              >
-                <span className="social-google" aria-hidden="true">
-                  G
-                </span>
-                Continue with Google
-              </button>
-
-              <button
-                type="button"
-                className="auth-social-button"
-                onClick={() => handleSocialLogin('github')}
-              >
-                <span className="social-github" aria-hidden="true">
-                  ⌘
-                </span>
-                Continue with GitHub
-              </button>
-            </div>
-
-            {socialMessage && (
-              <p className="auth-info-message" role="status">
-                {socialMessage}
-              </p>
-            )}
-
-            <div className="auth-divider">
-              <span>or continue with email</span>
-            </div>
-          </>
-        )}
 
         {/* Forgot password form */}
         {showForgotPanel && mode === 'login' ? (
@@ -347,7 +295,6 @@ function handleSocialLogin(provider: 'google' | 'github') {
                     className="auth-forgot-link"
                     onClick={() => {
                       setShowForgotPanel(true)
-                      setSocialMessage('')
                       setResetMessage('')
                       clearError()
                     }}
