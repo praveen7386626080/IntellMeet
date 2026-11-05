@@ -1,13 +1,18 @@
 # IntellMeet – Smart Meeting & Collaboration Platform
 
-IntellMeet is a web-based meeting and collaboration platform designed to help teams communicate, organize work, and collaborate efficiently. It provides user authentication, meeting rooms, real-time communication, workspace management, and AI-powered meeting assistance.
+IntellMeet is a full-stack web-based meeting and collaboration platform designed to help teams communicate, organize work, and collaborate efficiently. It combines real-time meetings, workspace management, participant interaction, and AI-powered meeting assistance in one platform.
+
+## Live Application
+
+- **Frontend:** https://intell-meet-l8ws.vercel.app
+- **Backend API:** https://intellmeet-backend-hsrt.onrender.com
+- **GitHub Repository:** https://github.com/praveen7386626080/IntellMeet
 
 ## Features
 
 ### Authentication & User Profile
-- User registration and login.
-- Google OAuth login.
-- GitHub OAuth login.
+- User registration and login using email and password.
+- Secure JWT-based authentication.
 - User profile management.
 - Profile photo upload using Cloudinary.
 
@@ -32,7 +37,9 @@ IntellMeet is a web-based meeting and collaboration platform designed to help te
 ### AI Meeting Assistance
 - Browser-based speech transcription.
 - Save meeting transcripts.
-- Generate meeting summaries, key decisions, and action items using a local Ollama model.
+- Generate AI-powered meeting summaries.
+- Extract key decisions and action items.
+- Ollama Cloud integration for AI-powered summaries.
 
 ## Technology Stack
 
@@ -42,16 +49,17 @@ IntellMeet is a web-based meeting and collaboration platform designed to help te
 | Backend | Node.js, Express.js, TypeScript |
 | Real-time Communication | Socket.IO, WebRTC |
 | Database | MongoDB, Mongoose |
-| Authentication | Passport.js, Google OAuth, GitHub OAuth |
+| Authentication | JWT, bcryptjs |
 | Profile Image Storage | Cloudinary |
-| AI Summaries | Ollama |
+| AI Summaries | Ollama Cloud |
+| Deployment | Vercel, Render |
 
 ## Requirements
 
 - Node.js and npm
 - MongoDB Atlas or local MongoDB
 - Google Chrome or Microsoft Edge
-- Ollama (for AI meeting summaries)
+- Ollama Cloud API key for AI meeting summaries
 
 ## Installation & Setup
 
@@ -69,7 +77,7 @@ cd backend
 npm install
 ```
 
-Create a `.env` file inside the backend directory. Add your own configuration:
+Create a `.env` file inside the `backend` directory and configure the required environment variables:
 
 ```env
 MONGODB_URI=your_mongodb_connection_string
@@ -77,23 +85,16 @@ JWT_SECRET=your_long_random_secret
 PORT=5002
 CLIENT_URL=http://localhost:5173
 
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-GOOGLE_CALLBACK_URL=http://localhost:5002/api/auth/google/callback
-
-GITHUB_CLIENT_ID=your_github_client_id
-GITHUB_CLIENT_SECRET=your_github_client_secret
-GITHUB_CALLBACK_URL=http://localhost:5002/api/auth/github/callback
-
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:3b
+OLLAMA_BASE_URL=https://ollama.com
+OLLAMA_MODEL=gemma4:31b
+OLLAMA_PROXY_TOKEN=your_ollama_cloud_api_key
 ```
 
-Use the environment variables required by your current backend configuration. Never commit `.env` or share its secrets.
+Use your own credentials. Never upload your `.env` file or expose private keys.
 
 Start the backend:
 
@@ -107,11 +108,22 @@ The local backend runs at:
 
 ### 3. Frontend Setup
 
-Open another terminal in the project root:
+Open another terminal from the project root:
 
 ```bash
 cd frontend
 npm install
+```
+
+Create a `.env` file inside the `frontend` directory:
+
+```env
+VITE_API_URL=http://localhost:5002/api
+```
+
+Start the frontend:
+
+```bash
 npm run dev
 ```
 
@@ -119,58 +131,75 @@ Open the local URL printed by Vite. By default:
 
 `http://localhost:5173`
 
-### 4. AI Meeting Summaries Setup
+### 4. AI Meeting Summaries
 
-Install Ollama and download the configured model:
+IntellMeet uses Ollama Cloud for AI-powered meeting summaries.
 
-```bash
-ollama pull qwen2.5:3b
+Configure the following backend environment variables:
+
+```env
+OLLAMA_BASE_URL=https://ollama.com
+OLLAMA_MODEL=gemma4:31b
+OLLAMA_PROXY_TOKEN=your_ollama_cloud_api_key
 ```
 
-Keep Ollama running while generating meeting summaries.
+Use a supported Ollama Cloud model and a valid API key. Keep the API key secure and do not expose it in frontend code.
 
 ## Build
 
-Backend:
+### Backend
 
 ```bash
 cd backend
 npm run build
 ```
 
-Frontend:
+### Frontend
 
 ```bash
 cd frontend
 npm run build
 ```
 
+## Deployment
+
+The application is deployed using:
+
+- **Frontend:** Vercel
+- **Backend:** Render
+- **Database:** MongoDB Atlas
+- **AI Service:** Ollama Cloud
+
+The deployed frontend communicates with the backend through the `VITE_API_URL` environment variable.
+
 ## Important Notes
 
-- Google and GitHub OAuth require valid provider credentials and configured callback URLs.
-- Google OAuth testing mode may require adding test users.
-- Profile photo upload requires valid Cloudinary credentials.
+- Email/password authentication is used in the current version.
+- Google and GitHub OAuth sign-in options are not included in the current login interface.
+- Profile photo uploads require valid Cloudinary credentials.
 - Speech recognition depends on browser support and microphone permissions.
-- AI meeting summaries require Ollama and the configured model.
-- Never upload `.env` files, API keys, passwords, or private credentials to GitHub.
+- AI meeting summaries require valid Ollama Cloud configuration.
+- The backend uses environment variables for database connections, authentication, and external service credentials.
+- Never commit `.env` files, API keys, passwords, or private credentials to GitHub.
 
-## Repository
+## Application Screenshots
 
-GitHub: https://github.com/praveen7386626080/IntellMeet
+### Login Page
+
+[IntellMeet Login](https://github.com/praveen7386626080/IntellMeet/blob/main/screenshots/login.png)
+
+### Dashboard
+
+[IntellMeet Dashboard](https://github.com/praveen7386626080/IntellMeet/blob/main/screenshots/dashboard.png)
+
+### User Profile
+
+[IntellMeet Profile](https://github.com/praveen7386626080/IntellMeet/blob/main/screenshots/profile.png)
+
+### Live Meeting Room
+
+[IntellMeet Meeting Room](https://github.com/praveen7386626080/IntellMeet/blob/main/screenshots/meeting.png)
 
 ---
 
 **IntellMeet – Meet Smarter. Work Better.**
-## Application Screenshots
-
-### Login Page
-![IntellMeet Login](screenshots/login.png)
-
-### Dashboard
-![IntellMeet Dashboard](screenshots/dashboard.png)
-
-### User Profile
-![IntellMeet Profile](screenshots/profile.png)
-
-### Live Meeting Room
-![IntellMeet Meeting Room](screenshots/meeting.png)
