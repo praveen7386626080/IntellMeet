@@ -396,6 +396,7 @@ router.post(
         return
       }
 
+     
       const transcript = meeting.transcript?.trim()
 
       if (!transcript) {
@@ -409,7 +410,17 @@ router.post(
         process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
       ).replace(/\/+$/, '')
 
-      const model = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
+      const model = process.env.OLLAMA_MODEL || 'qwen2.5:1.5b'
+      const proxyToken = process.env.OLLAMA_PROXY_TOKEN
+
+      if (!proxyToken) {
+        console.error('OLLAMA_PROXY_TOKEN is not configured.')
+
+        res.status(500).json({
+          message: 'Ollama proxy authentication is not configured.',
+        })
+        return
+      }
 
       let ollamaResponse: globalThis.Response
 
@@ -418,6 +429,7 @@ router.post(
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Authorization: `Bearer ${proxyToken}`,
           },
           body: JSON.stringify({
             model,
@@ -469,7 +481,7 @@ ${transcript}`,
 
         res.status(503).json({
           message:
-            'Could not reach Ollama. Start Ollama and make sure the configured model is available.',
+            'Could not reach Ollama. Check that Ollama, the proxy, and Cloudflare Tunnel are running.',
         })
         return
       }
@@ -500,6 +512,7 @@ ${transcript}`,
         })
         return
       }
+
 
       const generatedSummary = parseGeneratedSummary(generatedData)
 
