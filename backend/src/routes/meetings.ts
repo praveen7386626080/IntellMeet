@@ -466,8 +466,15 @@ ${transcript}`,
           detail,
         )
 
+        const providerDetail =
+          ollamaResponse.status === 401
+            ? 'Authentication failed. Configure a valid Ollama API key as OLLAMA_PROXY_TOKEN.'
+            : ollamaResponse.status === 404
+              ? 'The configured Ollama model was not found.'
+              : `The Ollama provider returned HTTP ${ollamaResponse.status}.`
+
         res.status(502).json({
-          message: `Ollama could not generate the summary. Check that the model "${model}" is installed and running.`,
+          message: `Ollama could not generate the summary. ${providerDetail} Effective model: "${model}".`,
         })
         return
       }

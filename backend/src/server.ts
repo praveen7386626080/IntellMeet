@@ -49,6 +49,14 @@ app.get('/api/health', (_req, res) => {
     message: 'IntellMeet API is running.',
     database:
       mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    ollama: {
+      baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
+      model: process.env.OLLAMA_MODEL || 'qwen2.5:3b',
+      proxyTokenConfigured: Boolean(
+        process.env.OLLAMA_PROXY_TOKEN ||
+        process.env.OLLAMA_API_KEY,
+      ),
+    },
   })
 })
 
