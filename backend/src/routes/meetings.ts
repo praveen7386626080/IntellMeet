@@ -390,7 +390,7 @@ router.post(
 
       const groqApiKey = process.env.GROQ_API_KEY
       const groqModel =
-        process.env.GROQ_MODEL || 'llama-3.1-8b-instant'
+        process.env.GROQ_MODEL || 'openai/gpt-oss-20b'
 
       if (!groqApiKey) {
         res.status(503).json({

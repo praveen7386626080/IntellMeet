@@ -74,7 +74,7 @@ app.get('/api/health', (_req, res) => {
       mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     ai: {
       provider: 'Groq',
-      model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
+      model: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
       apiKeyConfigured: Boolean(process.env.GROQ_API_KEY),
     },
   })
