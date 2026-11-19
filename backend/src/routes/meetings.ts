@@ -490,6 +490,8 @@ ${transcript}`
         const providerDetail =
           ollamaResponse.status === 401
             ? 'Authentication failed. Configure a valid Ollama API key as OLLAMA_PROXY_TOKEN.'
+            : ollamaResponse.status === 402
+              ? 'Ollama Cloud requires billing credits or a supported paid plan.'
             : ollamaResponse.status === 404
               ? 'The configured Ollama model was not found.'
               : `The Ollama provider returned HTTP ${ollamaResponse.status}.`
