@@ -35,8 +35,31 @@ const CLIENT_URLS = (
   .map((url) => url.trim())
   .filter(Boolean)
 
+const ALLOWED_CLIENT_ORIGINS = new Set([
+  ...CLIENT_URLS,
+  'https://intell-meet-l8ws.vercel.app',
+])
+
+function isAllowedClientOrigin(origin: string | undefined): boolean {
+  if (!origin) return true
+  if (ALLOWED_CLIENT_ORIGINS.has(origin)) return true
+
+  return /^https:\/\/intell-meet-l8ws-[a-z0-9-]+\.vercel\.app$/.test(
+    origin,
+  )
+}
+
 // Express CORS configuration.
-app.use(cors({ origin: CLIENT_URLS }))
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      callback(
+        null,
+        isAllowedClientOrigin(origin),
+      )
+    },
+  }),
+)
 
 app.use(passport.initialize())
 
