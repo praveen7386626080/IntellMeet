@@ -10,6 +10,7 @@ import ProfilePage from './auth/ProfilePage'
 import WorkspacePage, {
   type WorkspaceSection,
 } from './workspace/WorkspacePage'
+import { getApiUrl } from './config/api'
 
 type Meeting = {
   id: string
@@ -40,13 +41,9 @@ type DashboardAnalytics = {
   summaryCount: number
 }
 
-const API_URL = `${
-  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
-}/meetings`
+const API_URL = `${getApiUrl()}/meetings`
 
-const WORKSPACE_API_URL = `${
-  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
-}/workspace`
+const WORKSPACE_API_URL = `${getApiUrl()}/workspace`
 
 const menuItems = [
   'Dashboard',

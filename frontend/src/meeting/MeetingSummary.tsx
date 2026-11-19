@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react'
 import './MeetingSummary.css'
+import { getApiUrl } from '../config/api'
 
 interface MeetingSummaryProps {
   meetingId?: string
@@ -14,7 +15,7 @@ interface SummaryResult {
   summaryGeneratedAt?: string | null
 }
 
-const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/meetings`
+const API_URL = `${getApiUrl()}/meetings`
 const TOKEN_KEY = 'intellmeet-access-token'
 
 export default function MeetingSummary({

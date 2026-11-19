@@ -5,6 +5,7 @@ import {
   type FormEvent,
 } from 'react'
 import './WorkspacePage.css'
+import { getApiUrl } from '../config/api'
 
 export type WorkspaceSection =
   | 'Messages'
@@ -72,7 +73,7 @@ interface Analytics {
   summaryCount: number
 }
 
-const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/workspace`
+const API_URL = `${getApiUrl()}/workspace`
 
 
 

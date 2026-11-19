@@ -8,9 +8,9 @@ import {
   type ReactNode,
 } from 'react'
 
-const API_URL = `${
-  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
-}/auth`
+import { getApiUrl } from '../config/api'
+
+const API_URL = `${getApiUrl()}/auth`
 
 const TOKEN_KEY = 'intellmeet-access-token'
 

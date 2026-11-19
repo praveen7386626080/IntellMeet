@@ -60,10 +60,9 @@ type SpeechWindow = Window & {
   SpeechRecognition?: SpeechRecognitionConstructor
   webkitSpeechRecognition?: SpeechRecognitionConstructor
 }
+import { getApiUrl } from '../config/api'
 
-const API_URL = `${
-  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
-}/meetings`
+const API_URL = `${getApiUrl()}/meetings`
 
 const TOKEN_KEY = 'intellmeet-access-token'
 

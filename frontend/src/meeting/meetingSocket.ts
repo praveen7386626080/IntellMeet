@@ -1,11 +1,9 @@
 
 import { io, type Socket } from 'socket.io-client'
+import { getApiUrl } from '../config/api'
 
-// Your existing frontend/.env contains:
-// VITE_API_URL=http://localhost:5000/api
-//
 // Socket.IO connects to the backend server root, not the /api path.
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+const API_URL = getApiUrl()
 
 const SOCKET_URL = API_URL.replace(/\/api\/?$/, '')
 
