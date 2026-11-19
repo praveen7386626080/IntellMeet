@@ -395,37 +395,7 @@ router.post(
       let ollamaResponse: globalThis.Response
 
       try {
-        ollamaResponse = await fetch(`${ollamaUrl}/api/generate`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(proxyToken
-              ? { Authorization: `Bearer ${proxyToken}` }
-              : {}),
-          },
-          body: JSON.stringify({
-            model,
-            stream: false,
-            format: {
-              type: 'object',
-              properties: {
-                summary: { type: 'string' },
-                keyDecisions: {
-                  type: 'array',
-                  items: { type: 'string' },
-                },
-                actionItems: {
-                  type: 'array',
-                  items: { type: 'string' },
-                },
-              },
-              required: ['summary', 'keyDecisions', 'actionItems'],
-              additionalProperties: false,
-            },
-            options: {
-              temperature: 0.2,
-            },
-            prompt: `You are an assistant that writes accurate meeting summaries.
+        const summaryPrompt = `You are an assistant that writes accurate meeting summaries.
 
 Return only a valid JSON object with exactly these fields:
 {
@@ -444,10 +414,61 @@ Rules:
 Meeting title: ${meeting.title}
 
 Meeting transcript:
-${transcript}`,
-          }),
-          signal: AbortSignal.timeout(120_000),
-        })
+${transcript}`
+        const isCloud = ollamaUrl === 'https://ollama.com'
+        const providerRequestBody = isCloud
+          ? {
+              model,
+              stream: false,
+              messages: [
+                {
+                  role: 'user',
+                  content: summaryPrompt,
+                },
+              ],
+              options: {
+                temperature: 0.2,
+              },
+            }
+          : {
+              model,
+              stream: false,
+              format: {
+                type: 'object',
+                properties: {
+                  summary: { type: 'string' },
+                  keyDecisions: {
+                    type: 'array',
+                    items: { type: 'string' },
+                  },
+                  actionItems: {
+                    type: 'array',
+                    items: { type: 'string' },
+                  },
+                },
+                required: ['summary', 'keyDecisions', 'actionItems'],
+                additionalProperties: false,
+              },
+              options: {
+                temperature: 0.2,
+              },
+              prompt: summaryPrompt,
+            }
+
+        ollamaResponse = await fetch(
+          `${ollamaUrl}/api/${isCloud ? 'chat' : 'generate'}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(proxyToken
+                ? { Authorization: `Bearer ${proxyToken}` }
+                : {}),
+            },
+            body: JSON.stringify(providerRequestBody),
+            signal: AbortSignal.timeout(120_000),
+          },
+        )
       } catch (error) {
         console.error('Could not reach Ollama:', error)
 
