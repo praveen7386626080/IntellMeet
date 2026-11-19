@@ -89,6 +89,17 @@ function parseGeneratedSummary(value: unknown): MeetingSummary | null {
     return validateSummary(parseJsonText(value.message.content))
   }
 
+  if (
+    Array.isArray(value.choices) &&
+    isRecord(value.choices[0]) &&
+    isRecord(value.choices[0].message) &&
+    typeof value.choices[0].message.content === 'string'
+  ) {
+    return validateSummary(
+      parseJsonText(value.choices[0].message.content),
+    )
+  }
+
   return validateSummary(value)
 }
 
@@ -377,22 +388,19 @@ router.post(
         return
       }
 
-      const ollamaUrl = (
-        process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
-      ).replace(/\/+$/, '')
+      const groqApiKey = process.env.GROQ_API_KEY
+      const groqModel =
+        process.env.GROQ_MODEL || 'llama-3.1-8b-instant'
 
-      const configuredModel =
-        process.env.OLLAMA_MODEL || 'qwen2.5:3b'
-      const model =
-        ollamaUrl === 'https://ollama.com'
-          ? configuredModel.replace(/-cloud$/, '')
-          : configuredModel
-      const proxyToken =
-        process.env.OLLAMA_PROXY_TOKEN ||
-        process.env.OLLAMA_API_KEY ||
-        ''
+      if (!groqApiKey) {
+        res.status(503).json({
+          message:
+            'AI summaries are not configured. Set GROQ_API_KEY on the backend.',
+        })
+        return
+      }
 
-      let ollamaResponse: globalThis.Response
+      let groqResponse: globalThis.Response
 
       try {
         const summaryPrompt = `You are an assistant that writes accurate meeting summaries.
@@ -415,89 +423,64 @@ Meeting title: ${meeting.title}
 
 Meeting transcript:
 ${transcript}`
-        const isCloud = ollamaUrl === 'https://ollama.com'
-        const providerRequestBody = isCloud
-          ? {
-              model,
+
+        groqResponse = await fetch(
+          'https://api.groq.com/openai/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${groqApiKey}`,
+            },
+            body: JSON.stringify({
+              model: groqModel,
               stream: false,
+              temperature: 0.2,
+              response_format: { type: 'json_object' },
               messages: [
+                {
+                  role: 'system',
+                  content:
+                    'Return only a valid JSON object with summary, keyDecisions, and actionItems.',
+                },
                 {
                   role: 'user',
                   content: summaryPrompt,
                 },
               ],
-              options: {
-                temperature: 0.2,
-              },
-            }
-          : {
-              model,
-              stream: false,
-              format: {
-                type: 'object',
-                properties: {
-                  summary: { type: 'string' },
-                  keyDecisions: {
-                    type: 'array',
-                    items: { type: 'string' },
-                  },
-                  actionItems: {
-                    type: 'array',
-                    items: { type: 'string' },
-                  },
-                },
-                required: ['summary', 'keyDecisions', 'actionItems'],
-                additionalProperties: false,
-              },
-              options: {
-                temperature: 0.2,
-              },
-              prompt: summaryPrompt,
-            }
-
-        ollamaResponse = await fetch(
-          `${ollamaUrl}/api/${isCloud ? 'chat' : 'generate'}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(proxyToken
-                ? { Authorization: `Bearer ${proxyToken}` }
-                : {}),
-            },
-            body: JSON.stringify(providerRequestBody),
+            }),
             signal: AbortSignal.timeout(120_000),
           },
         )
       } catch (error) {
-        console.error('Could not reach Ollama:', error)
+        console.error('Could not reach Groq:', error)
 
         res.status(503).json({
           message:
-            'Could not reach Ollama. Start Ollama and make sure the configured model is available.',
+            'Could not reach the free AI provider. Try again shortly.',
         })
         return
       }
 
-      if (!ollamaResponse.ok) {
-        const detail = await ollamaResponse.text()
+      if (!groqResponse.ok) {
+        const detail = await groqResponse.text()
 
         console.error(
-          `Ollama returned ${ollamaResponse.status}:`,
+          `Groq returned ${groqResponse.status}:`,
           detail,
         )
 
         const providerDetail =
-          ollamaResponse.status === 401
-            ? 'Authentication failed. Configure a valid Ollama API key as OLLAMA_PROXY_TOKEN.'
-            : ollamaResponse.status === 402
-              ? 'Ollama Cloud requires billing credits or a supported paid plan.'
-            : ollamaResponse.status === 404
-              ? 'The configured Ollama model was not found.'
-              : `The Ollama provider returned HTTP ${ollamaResponse.status}.`
+          groqResponse.status === 401
+            ? 'Authentication failed. Configure a valid Groq API key.'
+            : groqResponse.status === 429
+              ? 'The free Groq usage limit was reached. Try again later.'
+              : groqResponse.status === 404
+                ? 'The configured Groq model was not found.'
+                : `The AI provider returned HTTP ${groqResponse.status}.`
 
         res.status(502).json({
-          message: `Ollama could not generate the summary. ${providerDetail} Effective model: "${model}".`,
+          message: `The AI summary could not be generated. ${providerDetail} Effective model: "${groqModel}".`,
         })
         return
       }
@@ -505,12 +488,12 @@ ${transcript}`
       let generatedData: unknown
 
       try {
-        generatedData = await ollamaResponse.json()
+        generatedData = await groqResponse.json()
       } catch (error) {
-        console.error('Ollama returned invalid JSON:', error)
+        console.error('Groq returned invalid JSON:', error)
 
         res.status(502).json({
-          message: 'Ollama returned an invalid response.',
+          message: 'The AI provider returned an invalid response.',
         })
         return
       }
@@ -519,13 +502,13 @@ ${transcript}`
 
       if (!generatedSummary) {
         console.error(
-          'Ollama returned an invalid meeting summary. Response:',
+          'Groq returned an invalid meeting summary. Response:',
           JSON.stringify(generatedData).slice(0, 3000),
         )
 
         res.status(502).json({
           message:
-            'Ollama could not create a valid summary. Check the backend terminal for the model response.',
+            'The AI provider could not create a valid summary.',
         })
         return
       }
