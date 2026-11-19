@@ -381,7 +381,12 @@ router.post(
         process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
       ).replace(/\/+$/, '')
 
-      const model = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
+      const configuredModel =
+        process.env.OLLAMA_MODEL || 'qwen2.5:3b'
+      const model =
+        ollamaUrl === 'https://ollama.com'
+          ? configuredModel.replace(/-cloud$/, '')
+          : configuredModel
       const proxyToken =
         process.env.OLLAMA_PROXY_TOKEN ||
         process.env.OLLAMA_API_KEY ||
