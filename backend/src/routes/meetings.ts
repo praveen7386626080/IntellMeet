@@ -382,6 +382,10 @@ router.post(
       ).replace(/\/+$/, '')
 
       const model = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
+      const proxyToken =
+        process.env.OLLAMA_PROXY_TOKEN ||
+        process.env.OLLAMA_API_KEY ||
+        ''
 
       let ollamaResponse: globalThis.Response
 
@@ -390,6 +394,9 @@ router.post(
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...(proxyToken
+              ? { Authorization: `Bearer ${proxyToken}` }
+              : {}),
           },
           body: JSON.stringify({
             model,
