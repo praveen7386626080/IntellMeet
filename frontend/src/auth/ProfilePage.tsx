@@ -38,6 +38,14 @@ async function readMessage(response: Response): Promise<string> {
   }
 }
 
+function getProfilePhotoUrl(photo?: string): string {
+  if (!photo?.startsWith('/api/')) {
+    return photo ?? ''
+  }
+
+  return `${new URL(API_BASE).origin}${photo}`
+}
+
 export default function ProfilePage() {
   const { token, user, signOut } = useAuth()
 
@@ -182,8 +190,12 @@ export default function ProfilePage() {
 
     if (!file) return
 
-    if (!file.type.startsWith('image/')) {
-      setError('Choose an image file.')
+    if (
+      !['image/jpeg', 'image/png', 'image/webp'].includes(
+        file.type,
+      )
+    ) {
+      setError('Choose a JPG, PNG, or WebP image.')
       return
     }
 
@@ -509,7 +521,10 @@ export default function ProfilePage() {
       <section className="profile-card profile-identity">
         <div className="profile-avatar-large">
           {profile.profilePhoto ? (
-            <img src={profile.profilePhoto} alt="Your profile" />
+            <img
+              src={getProfilePhotoUrl(profile.profilePhoto)}
+              alt="Your profile"
+            />
           ) : (
             <span>{initials}</span>
           )}
@@ -532,7 +547,7 @@ export default function ProfilePage() {
 
             <input
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
               onChange={uploadPhoto}
               disabled={uploading}
             />

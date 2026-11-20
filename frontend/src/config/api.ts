@@ -1,5 +1,5 @@
 const productionApiUrl =
-  'https://intellmeet-backend-ubrz.onrender.com/api'
+  'https://intellmeet-n0hi.onrender.com/api'
 
 export function getApiUrl(): string {
   const configured =

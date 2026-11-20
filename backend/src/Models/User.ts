@@ -78,7 +78,7 @@ const userSchema = new Schema(
       maxlength: 2048,
       default: '',
     },
-    profilePhotoPublicId: {
+    profilePhotoFileId: {
       type: String,
       select: false,
       default: '',

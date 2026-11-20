@@ -3,6 +3,7 @@ import { Router, type Response } from 'express'
 import bcrypt from 'bcryptjs'
 import { randomBytes, createHash } from 'node:crypto'
 import multer from 'multer'
+import mongoose from 'mongoose'
 
 import User from '../Models/User'
 import {
@@ -10,9 +11,8 @@ import {
   type AuthenticatedRequest,
 } from '../middleware/requireAuth'
 
-import { getCloudinary } from '../utils/cloudinary'
-
 const router = Router()
+const PROFILE_PHOTO_BUCKET = 'profilePhotos'
 
 // --------------------------------------------------
 // MULTER CONFIGURATION
@@ -93,6 +93,121 @@ function sha256(value: string): string {
     .update(value)
     .digest('hex')
 }
+
+function getProfilePhotoBucket() {
+  const database = mongoose.connection.db
+
+  if (!database) {
+    throw new Error('MongoDB connection is not ready.')
+  }
+
+  return new mongoose.mongo.GridFSBucket(database, {
+    bucketName: PROFILE_PHOTO_BUCKET,
+  })
+}
+
+function uploadProfilePhoto(
+  buffer: Buffer,
+  filename: string,
+  contentType: string,
+): Promise<string> {
+  const bucket = getProfilePhotoBucket()
+
+  return new Promise((resolve, reject) => {
+    const stream = bucket.openUploadStream(filename, {
+      metadata: { contentType },
+    })
+
+    stream.once('error', reject)
+    stream.once('finish', () => {
+      if (!stream.id) {
+        reject(new Error('Profile photo upload returned no file ID.'))
+        return
+      }
+
+      resolve(stream.id.toString())
+    })
+    stream.end(buffer)
+  })
+}
+
+async function deleteProfilePhotoFile(fileId: string): Promise<void> {
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    throw new Error('Stored profile photo file ID is invalid.')
+  }
+
+  await getProfilePhotoBucket().delete(
+    new mongoose.Types.ObjectId(fileId),
+  )
+}
+
+// Profile photos are public assets, so browsers can display them without an Authorization header.
+router.get(
+  '/photo/:fileId',
+  async (req, res) => {
+    const { fileId } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(fileId)) {
+      res.status(404).end()
+      return
+    }
+
+    try {
+      const currentPhoto = await User.findOne({
+        profilePhotoFileId: fileId,
+      }).select('_id')
+
+      if (!currentPhoto) {
+        res.status(404).end()
+        return
+      }
+
+      const bucket = getProfilePhotoBucket()
+      const objectId = new mongoose.Types.ObjectId(fileId)
+      const [file] = await bucket
+        .find({ _id: objectId })
+        .limit(1)
+        .toArray()
+
+      if (!file) {
+        res.status(404).end()
+        return
+      }
+
+      const allowedTypes = [
+        'image/jpeg',
+        'image/png',
+        'image/webp',
+      ]
+      const storedType = file.metadata?.contentType
+      const contentType =
+        typeof storedType === 'string' &&
+        allowedTypes.includes(storedType)
+          ? storedType
+          : 'application/octet-stream'
+
+      res.set({
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=3600',
+        'X-Content-Type-Options': 'nosniff',
+      })
+
+      const stream = bucket.openDownloadStream(objectId)
+      stream.once('error', (error) => {
+        console.error('Could not stream profile photo:', error)
+        if (res.headersSent) {
+          res.destroy()
+        } else {
+          res.status(500).end()
+        }
+      })
+      stream.pipe(res)
+    } catch (error) {
+      console.error('Could not retrieve profile photo:', error)
+      res.status(500).end()
+    }
+  },
+)
 
 // All profile routes require authentication.
 router.use(requireAuth)
@@ -323,7 +438,7 @@ router.post(
       }
 
       const user = await User.findById(req.userId)
-        .select('+profilePhotoPublicId')
+        .select('+profilePhotoFileId')
 
       if (!user) {
         res.status(404).json({
@@ -332,55 +447,34 @@ router.post(
         return
       }
 
-      const cloudinary = getCloudinary()
+      const oldFileId = user.profilePhotoFileId
+      const fileId = await uploadProfilePhoto(
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype,
+      )
 
-      const result = await new Promise<{
-        secure_url: string
-        public_id: string
-      }>((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: 'intellmeet/profile-photos',
-            resource_type: 'image',
-            transformation: [
-              {
-                width: 512,
-                height: 512,
-                crop: 'fill',
-                gravity: 'face',
-              },
-            ],
-          },
-          (error, result) => {
-            if (error || !result) {
-              reject(
-                error ?? new Error('Cloudinary upload failed.'),
-              )
-            } else {
-              resolve({
-                secure_url: result.secure_url,
-                public_id: result.public_id,
-              })
-            }
-          },
-        )
+      user.profilePhoto = `/api/profile/photo/${fileId}`
+      user.profilePhotoFileId = fileId
 
-        stream.end(req.file!.buffer)
-      })
-
-      const oldPublicId = user.profilePhotoPublicId
-
-      user.profilePhoto = result.secure_url
-      user.profilePhotoPublicId = result.public_id
-
-      await user.save()
-
-      if (oldPublicId) {
+      try {
+        await user.save()
+      } catch (error) {
         try {
-          await cloudinary.uploader.destroy(
-            oldPublicId,
-            { resource_type: 'image' },
+          await deleteProfilePhotoFile(fileId)
+        } catch (cleanupError) {
+          console.error(
+            'Could not remove an unreferenced profile photo:',
+            cleanupError,
           )
+        }
+
+        throw error
+      }
+
+      if (oldFileId && oldFileId !== fileId) {
+        try {
+          await deleteProfilePhotoFile(oldFileId)
         } catch (error) {
           console.error(
             'Could not remove previous profile photo:',
@@ -398,8 +492,7 @@ router.post(
       console.error('Could not upload profile photo:', error)
 
       res.status(500).json({
-        message:
-          'Could not upload profile photo. Check Cloudinary configuration.',
+        message: 'Could not upload profile photo. Please try again.',
       })
     }
   },
@@ -415,7 +508,7 @@ router.delete(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const user = await User.findById(req.userId)
-        .select('+profilePhotoPublicId')
+        .select('+profilePhotoFileId')
 
       if (!user) {
         res.status(404).json({
@@ -424,22 +517,19 @@ router.delete(
         return
       }
 
-      const publicId = user.profilePhotoPublicId
+      const fileId = user.profilePhotoFileId
 
       user.profilePhoto = ''
-      user.profilePhotoPublicId = ''
+      user.profilePhotoFileId = ''
 
       await user.save()
 
-      if (publicId) {
+      if (fileId) {
         try {
-          await getCloudinary().uploader.destroy(
-            publicId,
-            { resource_type: 'image' },
-          )
+          await deleteProfilePhotoFile(fileId)
         } catch (error) {
           console.error(
-            'Could not remove Cloudinary profile photo:',
+            'Could not remove profile photo file:',
             error,
           )
         }
@@ -698,7 +788,7 @@ router.post(
         .select(
           '+deletionConfirmationHash ' +
           '+deletionConfirmationExpiresAt ' +
-          '+profilePhotoPublicId',
+          '+profilePhotoFileId',
         )
 
       if (!user) {
@@ -734,21 +824,18 @@ router.post(
         return
       }
 
-      const publicId = user.profilePhotoPublicId
+      const fileId = user.profilePhotoFileId
 
       await User.deleteOne({
         _id: user._id,
       })
 
-      if (publicId) {
+      if (fileId) {
         try {
-          await getCloudinary().uploader.destroy(
-            publicId,
-            { resource_type: 'image' },
-          )
+          await deleteProfilePhotoFile(fileId)
         } catch (error) {
           console.error(
-            'Could not remove deleted user profile photo:',
+            'Could not remove deleted user profile photo file:',
             error,
           )
         }

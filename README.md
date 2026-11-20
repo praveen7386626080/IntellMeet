@@ -5,7 +5,7 @@ IntellMeet is a full-stack web-based meeting and collaboration platform designed
 ## Live Application
 
 - **Frontend:** https://intell-meet-l8ws.vercel.app
-- **Backend API:** https://intellmeet-backend-hsrt.onrender.com
+- **Backend API:** https://intellmeet-n0hi.onrender.com
 - **GitHub Repository:** https://github.com/praveen7386626080/IntellMeet
 
 ## Features
@@ -14,7 +14,7 @@ IntellMeet is a full-stack web-based meeting and collaboration platform designed
 - User registration and login using email and password.
 - Secure JWT-based authentication.
 - User profile management.
-- Profile photo upload using Cloudinary.
+- Profile photo upload stored in MongoDB GridFS.
 
 ### Meetings & Collaboration
 - Create and schedule meetings.
@@ -50,7 +50,7 @@ IntellMeet is a full-stack web-based meeting and collaboration platform designed
 | Real-time Communication | Socket.IO, WebRTC |
 | Database | MongoDB, Mongoose |
 | Authentication | JWT, bcryptjs |
-| Profile Image Storage | Cloudinary |
+| Profile Image Storage | MongoDB GridFS |
 | AI Summaries | Ollama Cloud |
 | Deployment | Vercel, Render |
 
@@ -84,10 +84,6 @@ MONGODB_URI=your_mongodb_connection_string
 JWT_SECRET=your_long_random_secret
 PORT=5002
 CLIENT_URL=http://localhost:5173
-
-CLOUDINARY_CLOUD_NAME=your_cloud_name
-CLOUDINARY_API_KEY=your_cloudinary_api_key
-CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
 OLLAMA_BASE_URL=https://ollama.com
 OLLAMA_MODEL=gemma4:31b
@@ -176,7 +172,7 @@ The deployed frontend communicates with the backend through the `VITE_API_URL` e
 
 - Email/password authentication is used in the current version.
 - Google and GitHub OAuth sign-in options are not included in the current login interface.
-- Profile photo uploads require valid Cloudinary credentials.
+- Profile photos are stored in MongoDB Atlas using GridFS.
 - Speech recognition depends on browser support and microphone permissions.
 - AI meeting summaries require valid Ollama Cloud configuration.
 - The backend uses environment variables for database connections, authentication, and external service credentials.
